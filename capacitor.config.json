@@ -1,0 +1,13 @@
+{
+  "appId": "com.bolhisab.app",
+  "appName": "BolHisab",
+  "webDir": "out",
+  "server": {
+    "url": "http://10.0.2.2:3100",
+    "cleartext": true,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

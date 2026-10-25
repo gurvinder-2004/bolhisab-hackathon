@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --cream: #f2f0ea;
+  --ink: #1a181c;
+  --sidebar: #1c1a1f;
+  --yellow: #f5c818;
+  --yellow-pale: #fae88a;
+  --violet: #8b5cf6;
+  --violet-deep: #6d3fd8;
+  --violet-pale: #ddd0fa;
+  --muted: #8b8a8f;
+  --line: #e5e3dc;
+}
+
+html, body { height: 100%; }
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Noto Sans", "Noto Sans Devanagari", "Nirmala UI", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, .display { letter-spacing: -0.02em; }
+
+@keyframes mic-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(245, 200, 24, 0.5); }
+  70% { box-shadow: 0 0 0 26px rgba(245, 200, 24, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 200, 24, 0); }
+}
+.mic-recording { animation: mic-pulse 1.2s infinite; }
+
+/* purple hero card texture: soft concentric rings around the mic */
+.voice-hero {
+  background:
+    radial-gradient(circle at 82% 55%, rgba(255,255,255,0.10) 0 8%, transparent 8.5%),
+    radial-gradient(circle at 82% 55%, rgba(255,255,255,0.07) 0 16%, transparent 16.5%),
+    radial-gradient(circle at 82% 55%, rgba(255,255,255,0.05) 0 24%, transparent 24.5%),
+    linear-gradient(135deg, #9d74f8 0%, #8b5cf6 45%, #7c4fe0 100%);
+}
+
+@media print {
+  .no-print, .no-print *, nav, nav *, aside, aside * { display: none !important; }
+  body { background: #fff !important; }
+  main { max-width: none !important; padding: 0 !important; }
+  main > section { box-shadow: none !important; border: none !important; border-radius: 0 !important; }
+}

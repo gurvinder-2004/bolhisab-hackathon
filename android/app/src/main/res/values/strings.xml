@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BolHisab</string>
+    <string name="title_activity_main">BolHisab</string>
+    <string name="package_name">com.bolhisab.app</string>
+    <string name="custom_url_scheme">com.bolhisab.app</string>
+</resources>
