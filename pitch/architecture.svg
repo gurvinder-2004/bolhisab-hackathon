@@ -1,0 +1,79 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1A181C"/>
+    </marker>
+    <marker id="arrV" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8B5CF6"/>
+    </marker>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#F2F0EA"/>
+  <text x="90" y="86" font-size="44" font-weight="800" fill="#1A181C">BolHisab — Architecture</text>
+  <text x="90" y="128" font-size="22" fill="#8B8A8F">Voice-first khata · GST bills · payment chasing — one source of truth</text>
+
+  <!-- SHOPKEEPER -->
+  <rect x="90" y="290" width="320" height="210" rx="24" fill="#FFFFFF" stroke="#E5E3DC" stroke-width="2"/>
+  <text x="120" y="332" font-size="17" font-weight="700" fill="#9C9A92" letter-spacing="2">SHOPKEEPER</text>
+  <text x="120" y="372" font-size="23" font-weight="700" fill="#1A181C">Android app + Web</text>
+  <text x="120" y="406" font-size="19" fill="#6B6960">“Sharma ji ne 110 ki sabji,</text>
+  <text x="120" y="432" font-size="19" fill="#6B6960">90 ka tel le liya”</text>
+  <text x="120" y="470" font-size="17" fill="#9C9A92">speaks Hinglish / हिंदी / English</text>
+
+  <!-- CUSTOMER -->
+  <rect x="90" y="620" width="320" height="170" rx="24" fill="#FFFFFF" stroke="#E5E3DC" stroke-width="2"/>
+  <text x="120" y="662" font-size="17" font-weight="700" fill="#9C9A92" letter-spacing="2">CUSTOMER</text>
+  <text x="120" y="700" font-size="23" font-weight="700" fill="#1A181C">Pay link (no app)</text>
+  <text x="120" y="734" font-size="19" fill="#6B6960">Itemized bill + UPI QR —</text>
+  <text x="120" y="760" font-size="19" fill="#6B6960">verifies the total himself</text>
+
+  <!-- MAIN CONTAINER -->
+  <rect x="560" y="210" width="840" height="600" rx="28" fill="#FFFFFF" stroke="#E5E3DC" stroke-width="2"/>
+  <text x="596" y="258" font-size="20" font-weight="800" fill="#1A181C">BolHisab — Next.js on Netlify</text>
+  <text x="596" y="284" font-size="16" fill="#9C9A92">one codebase · web + Android (Capacitor)</text>
+
+  <rect x="600" y="310" width="760" height="110" rx="18" fill="#F8F7F2" stroke="#E5E3DC" stroke-width="2"/>
+  <text x="632" y="355" font-size="22" font-weight="700" fill="#1A181C">Voice console  (/bolo)</text>
+  <text x="632" y="387" font-size="17" fill="#6B6960">mic capture (VAD) · spoken review · “haan / nahi” voice confirm · typed fallback</text>
+
+  <line x1="980" y1="420" x2="980" y2="456" stroke="#8B5CF6" stroke-width="3" marker-end="url(#arrV)"/>
+
+  <rect x="600" y="466" width="760" height="120" rx="18" fill="#F3EEFD" stroke="#DDD0FA" stroke-width="2"/>
+  <text x="632" y="510" font-size="22" font-weight="700" fill="#4A2FA6">Gemini API — server-side only</text>
+  <text x="632" y="542" font-size="17" fill="#6D3FD8">extracts ONLY what was said → intent JSON · key never leaves the server</text>
+  <text x="632" y="568" font-size="17" font-weight="700" fill="#4A2FA6">never calculates anything</text>
+
+  <line x1="980" y1="586" x2="980" y2="622" stroke="#8B5CF6" stroke-width="3" marker-end="url(#arrV)"/>
+
+  <rect x="600" y="632" width="760" height="140" rx="18" fill="#FDF6DB" stroke="#F5C818" stroke-width="2"/>
+  <text x="632" y="676" font-size="22" font-weight="700" fill="#8A6D00">Deterministic engine — all the maths</text>
+  <text x="632" y="708" font-size="17" fill="#8A6D00">money (whole-paise) · GST invoice · chase ladder · bank match (6 cases) · 13-week forecast</text>
+  <text x="632" y="740" font-size="17" fill="#8A6D00">writes only after the owner’s “haan” · 10-second undo</text>
+
+  <!-- SUPABASE -->
+  <rect x="1520" y="330" width="310" height="240" rx="24" fill="#141216"/>
+  <text x="1552" y="378" font-size="17" font-weight="700" fill="#F5C818" letter-spacing="2">SUPABASE</text>
+  <text x="1552" y="420" font-size="23" font-weight="700" fill="#FFFFFF">Postgres khata</text>
+  <text x="1552" y="452" font-size="19" fill="#FFFFFFaa">invoices · payments · khata</text>
+  <text x="1552" y="494" font-size="23" font-weight="700" fill="#FFFFFF">Realtime + Auth</text>
+  <text x="1552" y="526" font-size="19" fill="#FFFFFFaa">phone entry → dashboard,</text>
+  <text x="1552" y="552" font-size="19" fill="#FFFFFFaa">live, no refresh</text>
+
+  <!-- arrows -->
+  <line x1="410" y1="360" x2="552" y2="360" stroke="#1A181C" stroke-width="3.5" marker-end="url(#arr)"/>
+  <text x="424" y="342" font-size="16" fill="#6B6960" font-weight="600">speaks</text>
+
+  <line x1="1360" y1="450" x2="1512" y2="450" stroke="#1A181C" stroke-width="3.5" marker-end="url(#arr)"/>
+  <text x="1374" y="432" font-size="16" fill="#6B6960" font-weight="600">confirmed writes</text>
+
+  <!-- realtime dashed back to shopkeeper side -->
+  <path d="M 1520 540 C 1300 700, 800 720, 415 420" fill="none" stroke="#8B5CF6" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrV)"/>
+  <text x="1090" y="742" font-size="17" fill="#6D3FD8" font-weight="700">Realtime: dashboard updates the moment an entry is saved</text>
+
+  <!-- customer arrow from main -->
+  <path d="M 600 700 C 480 720, 450 720, 418 700" fill="none" stroke="#1A181C" stroke-width="3" marker-end="url(#arr)"/>
+  <text x="430" y="668" font-size="16" fill="#6B6960" font-weight="600">WhatsApp + pay link</text>
+
+  <text x="960" y="900" font-size="20" text-anchor="middle" fill="#6B6960" font-weight="600">The LLM only extracts speech. Every rupee is computed by our engine, in whole paise, and saved only after a spoken “haan”.</text>
+  <text x="90" y="1020" font-size="16" fill="#B5B3AA">bolhisab.netlify.app · hisab ab bolkar</text>
+</svg>
