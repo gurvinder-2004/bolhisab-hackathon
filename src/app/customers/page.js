@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { loadBook } from '../../lib/data.js';
 import { formatINR } from '../../engine/index.js';
 import { insertCustomer } from '../../lib/actions.js';
-import { Avatar, Icon } from '../../components/ui.js';
+import { Avatar, Icon, LangMenu } from '../../components/ui.js';
 import { useLang } from '../../lib/lang.js';
 import AuthGate from '../../components/AuthGate.js';
 
@@ -54,10 +54,13 @@ function Customers() {
           <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">{t('custTitle')}</h1>
           <p className="mt-0.5 text-xs font-semibold text-[#9C9A92]">{rows.length} {t('custSub')} · kul baaki {formatINR(totalBaaki)}</p>
         </div>
-        <button onClick={() => setAdding(!adding)}
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="md:hidden"><LangMenu /></span>
+          <button onClick={() => setAdding(!adding)}
           className="flex shrink-0 items-center gap-1.5 rounded-full bg-[#F5C818] px-4 py-3 text-xs font-extrabold text-[#1A181C] shadow-[0_12px_28px_-14px_rgba(245,200,24,0.9)] transition active:scale-95">
-          <Icon name="plus" className="h-4 w-4" /> {t('newCustomer')}
-        </button>
+            <Icon name="plus" className="h-4 w-4" /> {t('newCustomer')}
+          </button>
+        </div>
       </header>
 
       {adding && (

@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabase.js';
 import { loadBook } from '../../lib/data.js';
 import { formatINR } from '../../engine/index.js';
 import { CHANNEL_LABEL } from '../../domain/chase.js';
-import { Avatar, Eyebrow, Icon, dateEyebrow } from '../../components/ui.js';
+import { Avatar, Eyebrow, Icon, LangMenu, dateEyebrow } from '../../components/ui.js';
 import { useLang } from '../../lib/lang.js';
 import AuthGate from '../../components/AuthGate.js';
 
@@ -75,6 +75,7 @@ function Dashboard() {
             <Icon name="bell" className="h-5 w-5" />
             {!!book.followUps.length && <span className="absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full bg-[#F05A4F] ring-2 ring-white" />}
           </Link>
+          <span className="md:hidden"><LangMenu /></span>
           <span className="md:hidden"><Avatar name={book.business?.owner_name || book.business?.name || 'B'} className="h-11 w-11 text-xs" /></span>
         </div>
       </header>

@@ -14,7 +14,7 @@ import {
   insertCreditEntry, recordPayment, insertCustomer, undoWrite, logEvent, outstandingForCustomer,
   createVoiceBill,
 } from '../../lib/actions.js';
-import { Avatar, Icon } from '../../components/ui.js';
+import { Avatar, Icon, LangMenu } from '../../components/ui.js';
 import AuthGate from '../../components/AuthGate.js';
 
 const STATUS = {
@@ -627,6 +627,7 @@ function VoiceConsole() {
             <span className="text-sm font-semibold text-[#6D3FD8]">हिसाब अब बोलकर</span>
           </div>
         </div>
+        <span className="md:hidden"><LangMenu /></span>
       </header>
 
       {/* mic hero — purple voice card */}

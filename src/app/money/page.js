@@ -9,7 +9,7 @@ import { importBankPayment } from '../../lib/actions.js';
 import { formatINR, formatDateIN } from '../../engine/index.js';
 import { parseBankCSV, suggestMatch, buildSampleStatement } from '../../domain/bank.js';
 import { forecast, forecastHeadline } from '../../domain/forecast.js';
-import { Icon } from '../../components/ui.js';
+import { Icon, LangMenu } from '../../components/ui.js';
 import { useLang } from '../../lib/lang.js';
 import AuthGate from '../../components/AuthGate.js';
 
@@ -33,11 +33,14 @@ function MoneyPage() {
         <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">{t('moneyTitle')}</h1>
         <p className="mt-0.5 text-xs font-semibold text-[#9C9A92]">{t('moneySub')}</p>
       </header>
-      <div className="mb-4 flex gap-2 rounded-full bg-white p-1.5 ring-1 ring-[#E5E3DC] md:max-w-md">
+      <div className="mb-4 flex items-center gap-3">
+        <span className="md:hidden"><LangMenu /></span>
+        <div className="flex flex-1 gap-2 rounded-full bg-white p-1.5 ring-1 ring-[#E5E3DC] md:max-w-md">
         {[['import', 'Bank import'], ['forecast', '13-hafte forecast']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`flex-1 rounded-full py-2.5 text-xs font-bold transition ${tab === k ? 'bg-[#1A181C] text-white' : 'text-[#9C9A92]'}`}>{l}</button>
-        ))}
+              className={`flex-1 rounded-full py-2.5 text-xs font-bold transition ${tab === k ? 'bg-[#1A181C] text-white' : 'text-[#9C9A92]'}`}>{l}</button>
+          ))}
+        </div>
       </div>
       {tab === 'import' ? <ImportTab /> : <ForecastTab />}
     </main>

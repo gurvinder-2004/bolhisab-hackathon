@@ -107,6 +107,37 @@ export function AppFrame({ children }) {
   return <div className={chromeHidden(path) ? '' : 'md:pl-[272px]'}>{children}</div>;
 }
 
+// Compact globe menu for page headers (mobile-first, works everywhere).
+export function LangMenu({ dark = false }) {
+  const { lang, setLang, t } = useLang();
+  const [open, setOpen] = useState(false);
+  const opts = [['hg', 'Hinglish'], ['hi', 'हिंदी'], ['en', 'English']];
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)} aria-label={t('langLabel')}
+        className={`flex h-11 w-11 items-center justify-center rounded-full ring-1 transition active:scale-95
+          ${dark ? 'bg-white/10 text-white ring-white/20' : 'bg-white text-[#6B6960] ring-[#E5E3DC]'}`}>
+        <Icon name="globe" className="h-5 w-5" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-2 w-36 overflow-hidden rounded-2xl bg-white p-1.5 shadow-[0_20px_44px_-20px_rgba(26,24,28,0.5)] ring-1 ring-[#E5E3DC]">
+            {opts.map(([code, label]) => (
+              <button key={code} onClick={() => { setLang(code); setOpen(false); }}
+                className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition
+                  ${lang === code ? 'bg-[#F5C818] text-[#1A181C]' : 'text-[#6B6960] hover:bg-[#F8F7F2]'}`}>
+                {label}
+                {lang === code && <span>✓</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- desktop sidebar ----------
 export function Sidebar() {
   const path = usePathname();

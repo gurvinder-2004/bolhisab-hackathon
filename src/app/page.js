@@ -4,13 +4,15 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { Icon } from '../components/ui.js';
+import { Icon, LangSwitch } from '../components/ui.js';
+import { useLang } from '../lib/lang.js';
 
-const FEATURES = [
-  { icon: 'mic', tint: 'bg-[#FDF3C7] text-[#8A6D00]', title: 'Bol kar entry', body: '“Sharma ji ne 110 ki sabji, 90 ka tel liya” — sunta hai, dohraata hai, haan bolte hi bill ban jaata hai.' },
-  { icon: 'book', tint: 'bg-[#DDD0FA] text-[#4A2FA6]', title: 'GST bills + UPI', body: 'Tax Invoice engine with live CGST/SGST maths, print-ready format, QR pay link jo customer khud verify kare.' },
-  { icon: 'bell', tint: 'bg-[#FDE7E4] text-[#C4392C]', title: 'Payment chasing', body: 'WhatsApp → call → letter ladder khud chalti hai. A/B/C grades batati hain kis se pehle paisa aane wala hai.' },
-  { icon: 'chart', tint: 'bg-[#E0EBFB] text-[#2058C8]', title: 'Bank import + forecast', body: 'Statement paste karo — 6 tarah ke matches, TDS alag se. 13-hafte cash forecast with what-if.' },
+// feature copy comes from the language dictionary (f1t/f1b … f4t/f4b)
+const FEATURE_ICONS = [
+  { icon: 'mic', tint: 'bg-[#FDF3C7] text-[#8A6D00]', t: 'f1t', b: 'f1b' },
+  { icon: 'book', tint: 'bg-[#DDD0FA] text-[#4A2FA6]', t: 'f2t', b: 'f2b' },
+  { icon: 'bell', tint: 'bg-[#FDE7E4] text-[#C4392C]', t: 'f3t', b: 'f3b' },
+  { icon: 'chart', tint: 'bg-[#E0EBFB] text-[#2058C8]', t: 'f4t', b: 'f4b' },
 ];
 
 function Reveal({ children, className = '', delay = 0 }) {
@@ -20,6 +22,7 @@ function Reveal({ children, className = '', delay = 0 }) {
 }
 
 export default function Landing() {
+  const { t } = useLang();
   useEffect(() => {
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) if (e.isIntersecting) { e.target.classList.add('revealed'); io.unobserve(e.target); }
@@ -43,8 +46,9 @@ export default function Landing() {
             <a href="#how" className="transition hover:text-[#1A181C]">How it works</a>
             <a href="#download" className="transition hover:text-[#1A181C]">Download</a>
           </nav>
-          <Link href="/login" className="rounded-full bg-[#1A181C] px-5 py-2.5 text-xs font-extrabold text-white transition hover:bg-black active:scale-95">
-            Web Dashboard →
+          <span className="hidden sm:inline-flex"><LangSwitch /></span>
+          <Link href="/login" className="rounded-full bg-[#1A181C] px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-black active:scale-95 sm:px-5">
+            {t('ctaWeb')}
           </Link>
         </div>
       </header>
@@ -62,16 +66,16 @@ export default function Landing() {
             </Reveal>
             <Reveal delay={80}>
               <h1 className="mt-5 text-5xl font-extrabold leading-[1.05] tracking-tight md:text-6xl">
-                हिसाब अब <span className="relative inline-block">
-                  <span className="relative z-10">बोलकर</span>
+                {t('heroH1a')}{' '}
+                <span className="relative inline-block">
+                  <span className="relative z-10">{t('heroH1b')}</span>
                   <span className="absolute inset-x-0 bottom-1 z-0 h-4 rounded-sm bg-[#F5C818] md:h-5" />
-                </span>।
+                </span>
               </h1>
             </Reveal>
             <Reveal delay={160}>
               <p className="mt-5 max-w-md text-lg leading-relaxed text-[#6B6960]">
-                No typing, no apps sikho. Bas bolo — BolHisab sunta hai, confirm karta hai,
-                GST bill banata hai aur payment khud yaad dilaata hai.
+                {t('landingSub')}
               </p>
             </Reveal>
             <Reveal delay={240}>
@@ -80,7 +84,7 @@ export default function Landing() {
                   Web Dashboard →
                 </Link>
                 <a href="/bolhisab.apk" className="flex items-center gap-2 rounded-full bg-[#1A181C] px-7 py-4 text-sm font-extrabold text-white transition hover:scale-[1.03] active:scale-95">
-                  <Icon name="download" className="h-4 w-4" /> Download APK
+                  <Icon name="download" className="h-4 w-4" /> {t('ctaApk')}
                 </a>
               </div>
             </Reveal>
@@ -143,18 +147,18 @@ export default function Landing() {
       {/* features */}
       <section id="features" className="mx-auto max-w-6xl px-5 py-16 md:py-24">
         <Reveal>
-          <h2 className="text-center text-3xl font-extrabold tracking-tight md:text-4xl">Kaam jo BolHisab karta hai</h2>
+          <h2 className="text-center text-3xl font-extrabold tracking-tight md:text-4xl">{t('featuresTitle')}</h2>
           <p className="mx-auto mt-3 max-w-lg text-center text-[#6B6960]">Copy-pen aur WhatsApp ke chakkar se azaadi — ek bolti hui khata, sab kuch diary se zyada smart.</p>
         </Reveal>
         <div className="mt-12 grid gap-5 md:grid-cols-2">
-          {FEATURES.map((f, i) => (
+          {FEATURE_ICONS.map((f, i) => (
             <Reveal key={f.title} delay={i * 90}>
               <div className="group h-full rounded-[1.75rem] bg-white p-6 ring-1 ring-[#ECEAE2] transition hover:-translate-y-1 hover:shadow-[0_28px_60px_-30px_rgba(26,24,28,0.35)] hover:ring-[#F5C818]">
                 <span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${f.tint}`}>
                   <Icon name={f.icon} className="h-5 w-5" />
                 </span>
-                <h3 className="mt-4 text-lg font-extrabold tracking-tight">{f.title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-[#6B6960]">{f.body}</p>
+                <h3 className="mt-4 text-lg font-extrabold tracking-tight">{t(f.t)}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-[#6B6960]">{t(f.b)}</p>
               </div>
             </Reveal>
           ))}
@@ -164,12 +168,12 @@ export default function Landing() {
       {/* how it works */}
       <section id="how" className="border-y border-[#F0EEE8] bg-[#FCFBF8]">
         <div className="mx-auto max-w-6xl px-5 py-16 md:py-20">
-          <Reveal><h2 className="text-center text-3xl font-extrabold tracking-tight md:text-4xl">Teen kadam. Bas.</h2></Reveal>
+          <Reveal><h2 className="text-center text-3xl font-extrabold tracking-tight md:text-4xl">{t('howTitle')}</h2></Reveal>
           <div className="mt-12 grid gap-8 md:grid-cols-3">
             {[
-              ['1', 'Bolo', 'Mic dabaiye aur apni bhasha mein boliye — Hinglish, हिंदी या English.'],
-              ['2', 'Confirm', 'BolHisab bol kar sunata hai, aap “haan” bolein — ya screen par tap karein.'],
-              ['3', 'Ho gaya', 'Bill, khata, reminder, forecast — sab khud update, 10-second undo ke saath.'],
+              ['1', t('s1t'), t('s1b')],
+              ['2', t('s2t'), t('s2b')],
+              ['3', t('s3t'), t('s3b')],
             ].map(([n, t, b], i) => (
               <Reveal key={n} delay={i * 100}>
                 <div className="text-center">
@@ -189,14 +193,14 @@ export default function Landing() {
           <div className="relative overflow-hidden rounded-[2.5rem] bg-[#141216] px-6 py-14 text-center text-white md:py-20">
             <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full bg-[#F5C818]/25 blur-3xl animate-blob" />
             <div className="pointer-events-none absolute -bottom-20 -right-10 h-64 w-64 rounded-full bg-[#8B5CF6]/25 blur-3xl animate-blob" style={{ animationDelay: '-6s' }} />
-            <h2 className="relative text-3xl font-extrabold tracking-tight md:text-5xl">Hisab ab bolkar.</h2>
-            <p className="relative mx-auto mt-3 max-w-md text-white/60">Web par turant, ya Android app par — dono ek hi hisaab chalate hain.</p>
+            <h2 className="relative text-3xl font-extrabold tracking-tight md:text-5xl">{t('dlTitle')}</h2>
+            <p className="relative mx-auto mt-3 max-w-md text-white/60">{t('dlSub')}</p>
             <div className="relative mt-8 flex flex-wrap justify-center gap-3">
               <Link href="/login" className="rounded-full bg-[#F5C818] px-7 py-4 text-sm font-extrabold text-[#1A181C] transition hover:scale-[1.03] active:scale-95">
-                Web Dashboard →
+                {t('ctaWeb')}
               </Link>
               <a href="/bolhisab.apk" className="flex items-center gap-2 rounded-full bg-white/10 px-7 py-4 text-sm font-extrabold text-white ring-1 ring-white/25 transition hover:bg-white/20 active:scale-95">
-                <Icon name="download" className="h-4 w-4" /> Download APK
+                <Icon name="download" className="h-4 w-4" /> {t('ctaApk')}
               </a>
             </div>
           </div>
@@ -210,7 +214,7 @@ export default function Landing() {
             <img src="/logo-192.png" alt="" width={24} height={24} className="rounded-lg" />
             BolHisab · हिसाब अब बोलकर
           </span>
-          <span>Made for India's small manufacturers · Smart India Hackathon 2026</span>
+          <span>Made for India's small manufacturers</span>
         </div>
       </footer>
     </main>
