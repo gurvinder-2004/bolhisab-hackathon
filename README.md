@@ -7,7 +7,8 @@ Milestones done: M1 (money/GST engine), M2 (data model, sample data, customer ma
 M3 (voice pipeline: mic + Gemini audio-to-intent + spoken review + auto-reopened mic for
 voice yes/no + TTS), M4 (dashboard, invoices, GST invoice print, customers, chase ladder,
 demand letter, pay link + disputes), M5 (bank import + matching, 13-week forecast, what-if),
-M6 (Android app via Capacitor), UI redesign (cream/yellow/violet design system, desktop
+M6 (Android app via Capacitor), 
+UI redesign (cream/yellow/violet design system, desktop
 sidebar + mobile floating pill nav).
 
 ## Run the app
