@@ -51,7 +51,7 @@ export default function Login() {
 
           <div className="mt-5 rounded-2xl bg-[#F8F7F2] p-3 text-center ring-1 ring-[#E5E3DC]">
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#9C9A92]">Judges / demo account</p>
-            <button type="button" onClick={() => { setEmail('judges@bolhisab.in'); setPassword('bolhisab-demo'); }}
+            <button type="button" onClick={() => { setEmail('bolhisab.judges@gmail.com'); setPassword('bolhisab-demo'); }}
               className="mt-1 text-xs font-bold text-[#6D3FD8] active:underline">
               bolhisab.judges@gmail.com · bolhisab-demo <span className="text-[#9C9A92]">(tap to fill)</span>
             </button>
