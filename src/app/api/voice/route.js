@@ -57,6 +57,15 @@ async function callGemini(parts, opts = {}) {
   return null;
 }
 
+// The total of an itemized bill is always summed here from the per-item amounts —
+// the model only extracts what was spoken, it never computes.
+function sumItems(parsed) {
+  if (Array.isArray(parsed.items) && parsed.items.length) {
+    parsed.amountRupees = Math.round(parsed.items.reduce((s, it) => s + Math.round(Number(it.amountRupees || 0) * 100), 0)) / 100;
+  }
+  return parsed;
+}
+
 export async function POST(req) {
   let body;
   try { body = await req.json(); } catch { return NextResponse.json({ ok: false, error: 'bad_json' }, { status: 400 }); }
@@ -100,13 +109,13 @@ export async function POST(req) {
     // ---- full command parse ----
     if (audioBase64) {
       const g = await callGemini([{ text: 'Parse this voice command.' }, audioParts[1]]);
-      if (g) return NextResponse.json({ ok: true, parsed: normalizeGemini(g), source: 'gemini' });
+      if (g) return NextResponse.json({ ok: true, parsed: sumItems(normalizeGemini(g)), source: 'gemini' });
       return NextResponse.json({ ok: false, error: 'audio_not_understood' }, { status: 502 });
     }
 
     if (typeof text === 'string' && text.trim()) {
       const viaRules = parseCommand(text);
-      if (viaRules) return NextResponse.json({ ok: true, parsed: viaRules, source: 'rules' });
+      if (viaRules) return NextResponse.json({ ok: true, parsed: sumItems(viaRules), source: 'rules' });
       const g = await callGemini([{ text }]);
       if (g) return NextResponse.json({ ok: true, parsed: normalizeGemini(g), source: 'gemini' });
       return NextResponse.json({ ok: true, parsed: { intent: 'unknown', heard: text.trim() }, source: 'rules' });

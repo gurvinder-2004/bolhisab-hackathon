@@ -77,6 +77,22 @@ export default function PayLink({ params }) {
               <p className="mt-1 text-[11px] capitalize text-white/50">{amountInWords(inv.outstanding)}</p>
             </div>
             <div className="px-6 py-5">
+              {Array.isArray(inv.lines) && inv.lines.length > 0 && (
+                <div className="mb-4 rounded-2xl bg-[#F8F7F2] p-3 text-left ring-1 ring-[#E5E3DC]">
+                  <p className="px-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#9C9A92]">Bill mein kya-kya</p>
+                  <ul className="mt-1.5">
+                    {inv.lines.map((l, idx) => (
+                      <li key={idx} className="flex items-center justify-between border-b border-[#ECEAE2] px-1 py-2 text-xs last:border-0">
+                        <span className="pr-2 text-[#6B6960]">{l.description}{l.qty > 1 ? ` × ${l.qty}` : ''}</span>
+                        <span className="shrink-0 font-bold">{formatINR(l.lineTotal ?? l.taxable)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 flex justify-between px-1 pt-1.5 text-xs font-extrabold">
+                    <span>Kul</span><span>{formatINR(inv.totalPaise)}</span>
+                  </p>
+                </div>
+              )}
               {qr && (
                 <>
                   <img src={qr} alt="UPI QR" width={220} height={220} className="mx-auto rounded-2xl ring-1 ring-[#E5E3DC]" />

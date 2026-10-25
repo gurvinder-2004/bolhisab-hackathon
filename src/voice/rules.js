@@ -107,6 +107,70 @@ const CUSTOMER_WORDS = norm(['customer', 'grahak', 'client', 'khaata', 'khaat', 
 
 const hasAny = (norms, list) => norms.some((t) => list.includes(t));
 
+// ---- itemized bills: "110 ki sabji, 90 ka tel, 150 ka raashan le liya" ----
+// Each item is taken EXACTLY as spoken; the total is always summed here, never by the LLM.
+const ITEM_LINK = new Set(['ka', 'ki', 'ke']); // "110 ki sabji", "90 ka tel"
+const ITEM_STOP = new Set(norm(['liya', 'liye', 'lie', 'le', 'leliya', 'leliye', 'lelie', 'legaye', 'gaye', 'diya', 'diye', 'लिया', 'लिए', 'ले', 'गए']));
+const GENERIC_LABELS = new Set(norm(['samaan', 'saman', 'maal', 'kirana', 'kiryana', 'samangri', 'सामान', 'माल', 'किराना']));
+const DEFAULT_ITEM_LABEL = 'Kiryana samaan';
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+// Read an amount starting at word i (digits or number-words). -> {rupees, end} | null
+function amountAt(words, i) {
+  const m = /^(?:₹|rs\.?|rupees?|rupaye)?(\d+(?:,\d{2,3})*)(?:\.(\d{1,2}))?$/i.exec(words[i] ?? '');
+  if (m) {
+    let n = Number(m[1].replace(/,/g, ''));
+    if (m[2]) n += Number('0.' + m[2]);
+    let end = i + 1;
+    const suf = normWord(words[end] ?? '');
+    if (suf === 'k' || suf === 'hajar') { n *= 1e3; end++; }
+    else if (suf === 'lakh' || suf === 'lac') { n *= 1e5; end++; }
+    else if (suf === 'karod' || suf === 'crore') { n *= 1e7; end++; }
+    return n > 0 ? { rupees: n, end } : null;
+  }
+  const wa = wordAmount(words.slice(i));
+  if (wa && wa.start === 0 && wa.end > 0) return { rupees: wa.rupees, end: i + wa.end };
+  return null;
+}
+
+// One clause: "<amount> (ki|ka|ke) <label words>". -> item | null
+function itemAt(words, i) {
+  const a = amountAt(words, i);
+  if (!a) return null;
+  let j = a.end;
+  if (!ITEM_LINK.has(normWord(words[j] ?? ''))) return null;
+  j++;
+  const labelWords = [];
+  while (j < words.length && labelWords.length < 4) {
+    if (ITEM_STOP.has(normWord(words[j]))) break;
+    const next = amountAt(words, j);
+    if (next && ITEM_LINK.has(normWord(words[next.end] ?? ''))) break; // the next item starts here
+    labelWords.push(words[j]);
+    j++;
+  }
+  const label = labelWords.join(' ').replace(/[,.]$/g, '').trim();
+  if (!label) return null;
+  return { label, amountRupees: a.rupees, end: j };
+}
+
+// All items in the utterance + the word index where the first one starts.
+function extractItems(words) {
+  const items = [];
+  let firstAt = -1;
+  for (let i = 0; i < words.length; i++) {
+    const it = itemAt(words, i);
+    if (!it) continue;
+    if (firstAt < 0) firstAt = i;
+    items.push(it);
+    i = it.end - 1; // jump past the label (handles comma-free lists too)
+  }
+  if (!items.length) return { items: null, firstAt: -1 };
+  let list = items.map((it) => ({ label: cap(it.label), amountRupees: it.amountRupees }));
+  // a lone generic "1000 ka samaan" becomes the default bill line
+  if (list.length === 1 && GENERIC_LABELS.has(normWord(list[0].label))) list = [{ label: DEFAULT_ITEM_LABEL, amountRupees: list[0].amountRupees }];
+  return { items: list, firstAt };
+}
+
 // ---- Short answers for the voice-confirm loop (typed text path; audio goes via Gemini) ----
 
 const YES_WORDS = norm(['haan', 'han', 'ha', 'ji', 'haanji', 'karo', 'kardo', 'kardoji', 'kardijiye', 'kardena', 'thik', 'thika', 'theek', 'ok', 'okay', 'sahi', 'bilkul', 'chalo', 'avjo', 'hu', 'yes', 'ya', 'yep', 'correct', 'confirm', 'done', 'haanji', 'हाँ', 'हां', 'ठीक', 'सही', 'करो', 'जी', 'चलो', 'हौ', 'હોં', 'હા']);
@@ -164,21 +228,38 @@ export function parseCommand(raw) {
   else if (numericAmount(text) || wordAmount(words)) intent = 'add_credit'; // bare "gupta ji 400" -> khata entry
   else return null;
 
-  // --- amount
-  let amount = null, wordSpan = null, matchedNum = null;
-  if (intent !== 'add_customer') {
-    const n = numericAmount(text);
-    if (n) { amount = n.rupees; matchedNum = n.matched; }
-    else {
-      const w = wordAmount(words);
-      if (w) { amount = w.rupees; wordSpan = [w.start, w.end]; }
+  // --- items: "110 ki sabji, 90 ka tel" — runs for sale-ish intents; a real item list
+  // always means goods taken on credit, even if a payment verb slipped in
+  let items = null, firstItemAt = -1;
+  if (intent === 'add_credit' || intent === 'record_payment' || numericAmount(text)) {
+    const ex = extractItems(words);
+    if (ex.items) {
+      items = ex.items;
+      firstItemAt = ex.firstAt;
+      intent = 'add_credit';
     }
   }
 
-  // --- customer name: words outside the amount span that are not command words
+  // --- amount
+  let amount = null, wordSpan = null, matchedNum = null;
+  if (intent !== 'add_customer') {
+    if (items) {
+      amount = Math.round(items.reduce((s, it) => s + Math.round(Number(it.amountRupees) * 100), 0)) / 100;
+    } else {
+      const n = numericAmount(text);
+      if (n) { amount = n.rupees; matchedNum = n.matched; }
+      else {
+        const w = wordAmount(words);
+        if (w) { amount = w.rupees; wordSpan = [w.start, w.end]; }
+      }
+    }
+  }
+
+  // --- customer name: words before the first item (or outside the amount span) that are not command words
   const matchedNumWords = new Set((matchedNum || '').toLowerCase().split(/\s+/));
+  const nameLimit = items ? firstItemAt : words.length;
   const nameWords = [];
-  for (let i = 0; i < words.length; i++) {
+  for (let i = 0; i < nameLimit; i++) {
     if (wordSpan && i >= wordSpan[0] && i < wordSpan[1]) continue;
     if (matchedNumWords.has(words[i].toLowerCase())) continue;
     if (KW.has(words[i].toLowerCase()) || KW.has(norms[i])) continue;
@@ -200,6 +281,7 @@ export function parseCommand(raw) {
     customerName,
     customerNameRoman: customerName && transliterate(customerName) !== customerName ? transliterate(customerName) : null,
     amountRupees: amount,
+    items,
     note: null,
     paymentMethod,
     heard: text,

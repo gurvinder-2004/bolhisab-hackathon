@@ -12,6 +12,7 @@ import { resolveCustomer, describeCandidates } from '../domain/match.js';
 import { formatINR, formatDateIN, toPaise, amountInWords, todayIST } from '../engine/index.js';
 import {
   insertCreditEntry, recordPayment, insertCustomer, undoWrite, logEvent, outstandingForCustomer,
+  createVoiceBill,
 } from '../lib/actions.js';
 import { Avatar, Icon } from '../components/ui.js';
 
@@ -392,7 +393,12 @@ export default function VoiceConsole() {
 
   const confirmFor = useCallback((customer, parsed) => {
     const paise = parsed.amountRupees != null ? toPaise(String(parsed.amountRupees)) : null;
-    if (parsed.intent === 'add_credit') {
+    if (parsed.intent === 'add_credit' && Array.isArray(parsed.items) && parsed.items.length) {
+      // itemized bill: the customer later verifies each line on the pay link
+      setCard({ type: 'confirm-bill', customer, parsed, items: parsed.items, paise, dateLabel: formatDateIN(todayIST()) });
+      const list = parsed.items.map((it) => `${it.label} ${Math.round(it.amountRupees)}`).join(', ');
+      speak(`${list}. Kul ${formatINR(paise)} ka bill banega. Bill khaate mein entry karun? Haan ya nahi?`, () => beginListen('confirm'));
+    } else if (parsed.intent === 'add_credit') {
       setCard({ type: 'confirm-credit', customer, parsed, paise, dateLabel: formatDateIN(todayIST()) });
       speak(`${customer.name} ke khaate mein ${formatINR(paise)} add karun? Haan ya nahi?`, () => beginListen('confirm'));
     } else if (parsed.intent === 'record_payment') {
@@ -524,6 +530,10 @@ export default function VoiceConsole() {
         const row = await insertCreditEntry({ customerId: card.customer.id, amountRupees: card.parsed.amountRupees, note: card.parsed.note });
         afterWrite('credit', row, `${card.customer.name} · khaata ${formatINR(card.paise)}`,
           `${card.customer.name} ke khaate mein ${formatINR(card.paise)} add ho gaya`);
+      } else if (card.type === 'confirm-bill') {
+        const row = await createVoiceBill({ customerId: card.customer.id, items: card.items });
+        afterWrite('invoice', row, `${card.customer.name} · bill ${row.number} · ${formatINR(card.paise)}`,
+          `${formatINR(card.paise)} ka bill ban gaya, ${card.customer.name} ke khaate mein`);
       } else if (card.type === 'confirm-payment') {
         const { payment, allocatedTo } = await recordPayment({ customerId: card.customer.id, amountRupees: card.parsed.amountRupees, method: card.parsed.paymentMethod });
         const allocLine = allocatedTo.length ? `${allocatedTo.length} bill${allocatedTo.length > 1 ? 's' : ''} adjust hue` : 'on account jama hua';
@@ -694,6 +704,41 @@ export default function VoiceConsole() {
                 />
                 <button type="submit" className="rounded-full bg-[#1A181C] px-4 py-2.5 text-xs font-bold text-white active:scale-95">Bhejo</button>
               </form>
+            )}
+
+            {card.type === 'confirm-bill' && (
+              <>
+                <h3 className="flex items-center gap-2 text-base font-extrabold tracking-tight">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#DDD0FA] text-[#4A2FA6]">
+                    <Icon name="book" className="h-4 w-4" />
+                  </span>
+                  Bill banau — khaate mein?
+                </h3>
+                <p className="mt-2 flex items-center gap-2 text-sm text-[#9C9A92]">
+                  <Avatar name={card.customer.name} className="h-7 w-7 text-[10px]" />
+                  {card.customer.name}{card.customer.area ? ` · ${card.customer.area}` : ''} · {card.dateLabel}
+                </p>
+                <ul className="mt-3 rounded-2xl bg-[#F8F7F2] p-2 ring-1 ring-[#E5E3DC]">
+                  {card.items.map((it, i) => (
+                    <li key={i} className="flex items-center justify-between border-b border-[#ECEAE2] px-2.5 py-2 text-sm last:border-0">
+                      <span className="font-semibold">{it.label}</span>
+                      <span className="font-bold">{formatINR(toPaise(String(it.amountRupees)))}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="my-4 text-center text-5xl font-extrabold tracking-tight">{formatINR(card.paise)}</p>
+                <p className="text-center text-xs capitalize text-[#9C9A92]">{amountInWords(card.paise)} — kul</p>
+                <p className="mt-3 flex items-center justify-center gap-1.5 text-xs font-bold text-[#6D3FD8]">
+                  <Icon name="mic" className="h-3.5 w-3.5" />
+                  {listening ? 'Sun raha hoon… boliye “haan” ya “nahi”' : 'Ya boliye: “haan” / “nahi”'}
+                </p>
+                <div className="mt-4 flex gap-3">
+                  <button onClick={closeCard} className="flex-1 rounded-2xl bg-[#F2F0EA] py-3.5 text-sm font-bold text-[#6B6960] ring-1 ring-[#E5E3DC] active:scale-[0.98]">Nahi</button>
+                  <button onClick={submitCard} disabled={busy} className="flex-[2] rounded-2xl bg-[#1A181C] py-3.5 text-sm font-extrabold text-white active:scale-[0.98] disabled:opacity-50">
+                    {busy ? 'Ban raha…' : 'Haan, bill banao'}
+                  </button>
+                </div>
+              </>
             )}
 
             {(card.type === 'confirm-credit' || card.type === 'confirm-payment') && (

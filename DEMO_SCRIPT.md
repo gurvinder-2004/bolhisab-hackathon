@@ -20,6 +20,12 @@ Tap the yellow mic and SPEAK:
 
 App SPEAKS the review aloud → mic reopens by itself → say **"haan"**.
 Entry saved + spoken confirm + 10s Undo toast visible.
+
+**Itemized bill (say this too):** "Sharma ji ne 110 ki sabji, 90 ka tel, 150 ka raashan le liye"
+→ the review reads each item + total → "haan" → a REAL numbered invoice is created.
+Open the pay link: the customer sees "BILL MEIN KYA-KYA — Sabji ₹110, Tel ₹90, Raashan ₹150, Kul ₹350"
+and can verify the total himself before paying by QR.
+
 Say the line again with a NEW name → "naya khaata banau? haan ya nahi" → say **"haan"**.
 Zoom the bottom pill nav: mic is one thumb-tap from ANY screen.
 

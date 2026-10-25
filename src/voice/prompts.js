@@ -12,6 +12,7 @@ Rules:
 - customer_name_roman: the same name in Latin script (transliterate). Null if no name.
 - One command per utterance. If the user said two things, take the first and put the rest in note.
 - amount_rupees: a number in rupees (not paise). Null if none spoken.
+- items: when the user lists SEVERAL goods with their prices ("110 ki sabji, 90 ka tel, 150 ka raashan"), list each one as {label, amount_rupees} EXACTLY as spoken — label in the user's script, the price they said for THAT item. Do NOT sum or compute anything: when items are present, leave amount_rupees null. For a single amount ("1000 ka samaan"), items stays empty/null.
 - note: what the goods/payment were for, in the user's own words, or null.
 - payment_method: upi | cash | bank | cheque | null.
 - new_customer: true only if the user is asking to CREATE a customer ("naya khaata", "add customer").
@@ -34,6 +35,17 @@ export const RESPONSE_SCHEMA = {
     customer_name_roman: { type: 'string', nullable: true },
     amount_rupees: { type: 'number', nullable: true },
     amount_phrase: { type: 'string', nullable: true },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          label: { type: 'string' },
+          amount_rupees: { type: 'number' },
+        },
+        required: ['label', 'amount_rupees'],
+      },
+    },
     note: { type: 'string', nullable: true },
     payment_method: { type: 'string', enum: ['upi', 'cash', 'bank', 'cheque'], nullable: true },
     new_customer: { type: 'boolean' },
@@ -51,11 +63,17 @@ export function normalizeGemini(g) {
   if (typeof g2.amount_rupees === 'number' && Number.isFinite(g2.amount_rupees) && g2.amount_rupees > 0) {
     amount = Math.round(g2.amount_rupees * 100) / 100;
   }
+  const items = (Array.isArray(g2.items) ? g2.items : [])
+    .map((it) => ({ label: String(it?.label ?? '').trim(), amountRupees: Number(it?.amount_rupees) }))
+    .filter((it) => it.label && Number.isFinite(it.amountRupees) && it.amountRupees > 0)
+    .map((it) => ({ label: it.label, amountRupees: Math.round(it.amountRupees * 100) / 100 }));
+  if (items.length) amount = null; // totals are summed deterministically server-side, never by the model
   return {
     intent,
     customerName: g2.customer_name?.trim() || null,
     customerNameRoman: g2.customer_name_roman?.trim() || null,
     amountRupees: amount,
+    items: items.length ? items : null,
     amountPhrase: g2.amount_phrase?.trim() || null,
     note: g2.note?.trim() || null,
     paymentMethod: g2.payment_method || null,

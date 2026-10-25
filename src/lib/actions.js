@@ -2,8 +2,10 @@
 // the voice path never touches the books on its own.
 
 import { supabase } from './supabase.js';
-import { todayIST } from '../engine/dates.js';
+import { todayIST, addDays } from '../engine/dates.js';
 import { toPaise } from '../engine/money.js';
+import { computeInvoice } from '../engine/gst.js';
+import { nextInvoiceNumber } from '../engine/invoiceNo.js';
 import { invoiceState } from '../domain/status.js';
 import { mapInvoiceRow, customerBalanceFromRows } from './ledger.js';
 
@@ -111,6 +113,41 @@ export async function importBankPayment({ customerId, amountPaise, paidOn, ref, 
   return payment;
 }
 
+// Voice bill: an itemized sale straight into the khata as a real invoice.
+// One line per spoken item (qty 1, 0% GST khata line) through the same engine as
+// /invoices/new — so the chase ladder, ageing, FIFO payments and the pay link
+// (where the customer verifies each item) all see it.
+export async function createVoiceBill({ customerId, items }) {
+  const biz = await getBusiness();
+  const { data: cust } = await supabase.from('customers').select('*').eq('id', customerId).single();
+  if (!cust) throw new Error('customer not found');
+  const date = todayIST();
+  const engineLines = items.map((it) => ({
+    description: it.label, hsn: '', unit: 'pcs', qty: 1,
+    ratePaise: toPaise(String(it.amountRupees)), gstRatePct: 0,
+  }));
+  const calc = computeInvoice({
+    business: { registrationType: biz.registration_type, stateCode: biz.state_code },
+    placeOfSupplyStateCode: cust.state_code ?? biz.state_code,
+    lines: engineLines,
+  });
+  const { data: existing } = await supabase.from('invoices').select('number').not('number', 'is', null);
+  const number = nextInvoiceNumber((existing ?? []).map((r) => r.number), date);
+  const { data, error } = await supabase.from('invoices').insert({
+    business_id: biz.id,
+    customer_id: customerId,
+    number,
+    invoice_date: date,
+    due_date: addDays(date, cust.credit_days ?? 30),
+    doc_type: calc.docType, supply: calc.supply, place_of_supply_code: calc.placeOfSupply?.code ?? null,
+    lines: engineLines.map((l, i) => ({ ...l, ...calc.lines[i] })),
+    taxable_paise: calc.totals.taxable, cgst_paise: calc.totals.cgst, sgst_paise: calc.totals.sgst,
+    igst_paise: calc.totals.igst, round_off_paise: calc.totals.roundOff, total_paise: calc.totals.grandTotal,
+  }).select().single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 export async function insertCustomer({ name, phone, area, city }) {
   const biz = await getBusiness();
   const { data, error } = await supabase.from('customers').insert({
@@ -136,6 +173,10 @@ export async function logEvent({ kind, customerId, payload }) {
 export async function undoWrite({ kind, id }) {
   if (kind === 'payment') await supabase.from('payments').delete().eq('id', id); // allocations cascade
   else if (kind === 'credit') await supabase.from('credit_entries').delete().eq('id', id);
+  else if (kind === 'invoice') {
+    await supabase.from('payment_allocations').delete().eq('invoice_id', id); // safety: a just-made bill has none
+    await supabase.from('invoices').delete().eq('id', id);
+  }
 }
 
 export async function outstandingForCustomer(customerId) {

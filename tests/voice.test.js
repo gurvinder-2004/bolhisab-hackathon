@@ -82,6 +82,42 @@ test('rules: gibberish returns null', () => {
   assert.equal(parseCommand(''), null);
 });
 
+test('rules: multi-item bill — items, labels, name, summed total', () => {
+  const r = parseCommand('sharma ji ne 110 ki sabji, 90 ka tel, 150 ka raashan le liya');
+  assert.equal(r.intent, 'add_credit');
+  assert.equal(r.customerName, 'sharma');
+  assert.equal(r.amountRupees, 350);
+  assert.deepEqual(r.items.map((i) => i.label), ['Sabji', 'Tel', 'Raashan']);
+  assert.deepEqual(r.items.map((i) => i.amountRupees), [110, 90, 150]);
+});
+
+test('rules: multi-item bill without commas', () => {
+  const r = parseCommand('gupta ne 40 ka atta 60 ka chawal liya');
+  assert.equal(r.amountRupees, 100);
+  assert.deepEqual(r.items.map((i) => i.label), ['Atta', 'Chawal']);
+});
+
+test('rules: single generic samaan becomes the default bill line', () => {
+  const r = parseCommand('ramesh ji 1000 ka samaan legaye');
+  assert.equal(r.intent, 'add_credit');
+  assert.equal(r.customerName, 'ramesh');
+  assert.equal(r.amountRupees, 1000);
+  assert.deepEqual(r.items, [{ label: 'Kiryana samaan', amountRupees: 1000 }]);
+});
+
+test('rules: word-amount items in Devanagari', () => {
+  const r = parseCommand('शर्मा जी ने दो सौ की सब्जी, नब्बे का तेल लिए');
+  assert.equal(r.amountRupees, 290);
+  assert.equal(r.items.length, 2);
+  assert.deepEqual(r.items.map((i) => i.amountRupees), [200, 90]);
+  assert.equal(r.customerName, 'शर्मा');
+});
+
+test('rules: payments and bare entries stay item-less', () => {
+  assert.equal(parseCommand('patil ne 5000 upi se bheje').items, null);
+  assert.equal(parseCommand('khan ji 350').items, null);
+});
+
 test('short answers: yes / no / other', () => {
   assert.equal(parseShortAnswer('haan'), 'yes');
   assert.equal(parseShortAnswer('haan ji kar do'), 'yes');
