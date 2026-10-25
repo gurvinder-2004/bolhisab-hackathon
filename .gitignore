@@ -8,3 +8,6 @@ android/app/build/
 android/build/
 android/local.properties
 android/variables.local.gradle
+
+# Local Netlify folder
+.netlify
