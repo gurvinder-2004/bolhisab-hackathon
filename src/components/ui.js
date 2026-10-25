@@ -96,6 +96,17 @@ export function LangSwitch({ dark = false }) {
   );
 }
 
+// Pages without app chrome (landing, login, customer-facing): no sidebar, no left padding.
+export function chromeHidden(path) {
+  return path === '/' || path.startsWith('/login') || path.startsWith('/pay/') || path.startsWith('/letter/');
+}
+
+// Shifts the page right by the sidebar width exactly when the sidebar is shown.
+export function AppFrame({ children }) {
+  const path = usePathname();
+  return <div className={chromeHidden(path) ? '' : 'md:pl-[272px]'}>{children}</div>;
+}
+
 // ---------- desktop sidebar ----------
 export function Sidebar() {
   const path = usePathname();
@@ -109,7 +120,7 @@ export function Sidebar() {
     supabase.auth.getSession().then(({ data }) => { if (live) setEmail(data?.session?.user?.email ?? null); });
     return () => { live = false; };
   }, []);
-  if (path.startsWith('/pay/') || path.startsWith('/letter/') || path === '/' || path.startsWith('/login')) return null;
+  if (chromeHidden(path)) return null;
   const NAV = [
     { href: '/dashboard', label: t('navHome'), icon: 'home' },
     { href: '/invoices', label: t('navKhata'), icon: 'book' },

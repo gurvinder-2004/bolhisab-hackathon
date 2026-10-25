@@ -1,6 +1,6 @@
 import './globals.css';
 import BottomNav from '../components/BottomNav.js';
-import { Sidebar } from '../components/ui.js';
+import { AppFrame, Sidebar } from '../components/ui.js';
 import { LangProvider } from '../lib/lang.js';
 
 export const metadata = {
@@ -21,7 +21,7 @@ export default function RootLayout({ children }) {
       <body className="min-h-full bg-[#F2F0EA] text-[#1A181C] antialiased">
         <LangProvider>
           <Sidebar />
-          <div className="md:pl-[272px]">{children}</div>
+          <AppFrame>{children}</AppFrame>
           <BottomNav />
         </LangProvider>
       </body>
