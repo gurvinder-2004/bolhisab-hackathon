@@ -4,7 +4,6 @@
 // and "I have a dispute" — which pauses all chasing until resolved.
 
 import { useEffect, useMemo, useState, use } from 'react';
-import QRCode from 'qrcode';
 import { supabase } from '../../../lib/supabase.js';
 import { formatINR, formatDateIN, amountInWords } from '../../../engine/index.js';
 import { mapInvoiceRow } from '../../../lib/ledger.js';
@@ -14,7 +13,6 @@ import { invoiceState } from '../../../domain/status.js';
 export default function PayLink({ params }) {
   const { id } = use(params);
   const [data, setData] = useState(null);
-  const [qr, setQr] = useState(null);
   const [done, setDone] = useState(false);
   const [reason, setReason] = useState('');
   const [askDispute, setAskDispute] = useState(false);
@@ -43,10 +41,6 @@ export default function PayLink({ params }) {
     const am = (d.inv.outstanding / 100).toFixed(2);
     return `upi://pay?pa=${encodeURIComponent(d.biz.upi_id)}&pn=${encodeURIComponent(d.biz.name)}&am=${am}&cu=INR&tn=${encodeURIComponent((d.inv.number ?? 'Invoice') + ' payment')}`;
   }, [data]);
-
-  useEffect(() => {
-    if (upiLink) QRCode.toDataURL(upiLink, { width: 220, margin: 1 }).then(setQr).catch(() => {});
-  }, [upiLink]);
 
   if (!data) return <main className="mx-auto max-w-md p-6 text-stone-400">Loading…</main>;
   if (data.missing) return <main className="mx-auto max-w-md p-6 text-rose-600">Invoice nahi mila.</main>;
@@ -93,9 +87,10 @@ export default function PayLink({ params }) {
                   </p>
                 </div>
               )}
-              {qr && (
+              {upiLink && (
                 <>
-                  <img src={qr} alt="UPI QR" width={220} height={220} className="mx-auto rounded-2xl ring-1 ring-[#E5E3DC]" />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/upi-qr.png" alt="UPI QR" width={220} height={224} className="mx-auto rounded-2xl ring-1 ring-[#E5E3DC]" />
                   <p className="mt-2 text-xs text-[#9C9A92]">Kisi bhi UPI app se scan karein</p>
                   <a href={upiLink} className="mt-3 inline-block rounded-full bg-[#F5C818] px-6 py-3 text-sm font-extrabold text-[#1A181C] shadow-[0_12px_28px_-12px_rgba(245,200,24,0.8)] active:scale-95">UPI app mein kholo</a>
                 </>

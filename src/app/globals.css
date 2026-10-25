@@ -31,6 +31,43 @@ h1, h2, .display { letter-spacing: -0.02em; }
 }
 .mic-recording { animation: mic-pulse 1.2s infinite; }
 
+/* ---------- landing (pure white, jitter-free: transform/opacity only) ---------- */
+html { scroll-behavior: smooth; }
+
+@keyframes floaty {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -12px, 0); }
+}
+@keyframes floaty-slow {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -20px, 0); }
+}
+@keyframes blob-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(30px, -24px, 0) scale(1.08); }
+  66% { transform: translate3d(-24px, 18px, 0) scale(0.95); }
+}
+@keyframes ring-out {
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes wave-bar {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.animate-floaty { animation: floaty 5s ease-in-out infinite; will-change: transform; }
+.animate-floaty-slow { animation: floaty-slow 7s ease-in-out infinite; will-change: transform; }
+.animate-blob { animation: blob-drift 14s ease-in-out infinite; will-change: transform; }
+.hero-ring { animation: ring-out 2.4s ease-out infinite; will-change: transform, opacity; }
+.wave-bar { animation: wave-bar 1s ease-in-out infinite; transform-origin: center; will-change: transform; }
+
+.reveal { opacity: 0; transform: translate3d(0, 26px, 0); will-change: transform, opacity; }
+.reveal.revealed { opacity: 1; transform: translate3d(0, 0, 0); transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; }
+  .animate-floaty, .animate-floaty-slow, .animate-blob, .hero-ring, .wave-bar { animation: none; }
+}
+
 /* purple hero card texture: soft concentric rings around the mic */
 .voice-hero {
   background:

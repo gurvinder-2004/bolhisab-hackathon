@@ -88,6 +88,8 @@ const KW_LIST = (
   'hisaab hisab batavo batao bata dikhao dikha do mujhe please ' +
   'reminder yaad yad dila dilado dilwa send bhejo msg message whatsapp ' +
   'abhi aaj kal is iske iska isko us uska jo invoice bill banao bana banaye gst ' +
+  'hatao hata delete mitao mita udao uka del karun ' +
+  'हटाओ हटा डिलीट मिटाओ मिटा उड़ाओ ' +
   'सामान उधार खाते खाता बाकी भेजे भेज दिया दिए ने का की को से में नया नई ग्राहक कितना कितने हिसाब बताओ याद दिलाओ जी जी'
 ).split(/\s+/);
 const KW = new Set(KW_LIST.flatMap((w) => {
@@ -104,6 +106,8 @@ const DUE_WORDS = norm(['baaki', 'baki', 'due', 'hisaab', 'hisab', 'balance', '�
 const REMINDER_WORDS = norm(['reminder', 'yaad', 'yad', 'whatsapp', 'msg', 'message', 'याद']);
 const NEW_WORDS = norm(['naya', 'nayi', 'navi', 'नया', 'नई']);
 const CUSTOMER_WORDS = norm(['customer', 'grahak', 'client', 'khaata', 'khaat', 'khata', 'ग्राहक', 'खाता']);
+const KHAATA_WORDS = norm(['khaata', 'khaat', 'khata', 'khate', 'khaatein', 'खाता', 'खाते']);
+const DELETE_WORDS = norm(['hatao', 'hata', 'delete', 'mitao', 'mita', 'udao', 'हटाओ', 'हटा', 'डिलीट', 'मिटाओ', 'मिटा', 'उड़ाओ']);
 
 const hasAny = (norms, list) => norms.some((t) => list.includes(t));
 
@@ -221,6 +225,7 @@ export function parseCommand(raw) {
   // --- intent, priority: question > reminder > new customer > payment > credit
   let intent = null;
   if (hasAny(norms, ASK_WORDS) && (hasAny(norms, DUE_WORDS) || text.includes('?'))) intent = 'outstanding';
+  else if (hasAny(norms, DELETE_WORDS) && hasAny(norms, KHAATA_WORDS)) intent = 'delete_customer';
   else if (hasAny(norms, REMINDER_WORDS)) intent = 'reminder';
   else if (hasAny(norms, NEW_WORDS) && hasAny(norms, CUSTOMER_WORDS)) intent = 'add_customer';
   else if (hasAny(norms, PAY_VERBS)) intent = 'record_payment';

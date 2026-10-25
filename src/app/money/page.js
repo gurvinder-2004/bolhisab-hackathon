@@ -10,6 +10,8 @@ import { formatINR, formatDateIN } from '../../engine/index.js';
 import { parseBankCSV, suggestMatch, buildSampleStatement } from '../../domain/bank.js';
 import { forecast, forecastHeadline } from '../../domain/forecast.js';
 import { Icon } from '../../components/ui.js';
+import { useLang } from '../../lib/lang.js';
+import AuthGate from '../../components/AuthGate.js';
 
 const TYPE_META = {
   exact: { label: 'Exact match', cls: 'bg-[#E7F6EC] text-[#1B7A3D]' },
@@ -21,17 +23,18 @@ const TYPE_META = {
   unknown_customer: { label: 'Kaun bheja?', cls: 'bg-[#F2F0EA] text-[#9C9A92]' },
 };
 
-export default function MoneyPage() {
+function MoneyPage() {
+  const { t } = useLang();
   const [tab, setTab] = useState('import');
   return (
     <main className="mx-auto max-w-3xl px-4 pb-28 pt-5 md:px-8 md:pb-10 md:pt-8">
       <header className="mb-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#9C9A92]">Paisa</p>
-        <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">Aana / Jaana</h1>
-        <p className="mt-0.5 text-xs font-semibold text-[#9C9A92]">Bank import + 13-hafte cash nashpati</p>
+        <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">{t('moneyTitle')}</h1>
+        <p className="mt-0.5 text-xs font-semibold text-[#9C9A92]">{t('moneySub')}</p>
       </header>
       <div className="mb-4 flex gap-2 rounded-full bg-white p-1.5 ring-1 ring-[#E5E3DC] md:max-w-md">
-        {[['import', 'Bank import'], ['forecast', '13-hafte nashpati']].map(([k, l]) => (
+        {[['import', 'Bank import'], ['forecast', '13-hafte forecast']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-1 rounded-full py-2.5 text-xs font-bold transition ${tab === k ? 'bg-[#1A181C] text-white' : 'text-[#9C9A92]'}`}>{l}</button>
         ))}
@@ -143,7 +146,7 @@ function ImportTab() {
                       <p className="text-[11px] text-[#9C9A92]">{formatDateIN(r.dateISO)} {r.ref ? `· ${r.ref}` : ''}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <p className="text-sm font-extrabold">+{formatINR(r.amountPaise)}</p>
+                      <p className="text-sm font-extrabold text-[#1B7A3D]">+{formatINR(r.amountPaise)}</p>
                       <Icon name="chevron" className={`h-4 w-4 text-[#B5B3AA] transition ${open === i ? 'rotate-90' : ''}`} />
                     </div>
                   </button>
@@ -228,7 +231,7 @@ function ForecastTab() {
           </div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/50">13 hafte baad{dirty ? ' (what-if)' : ''}</p>
-            <p className={`mt-1 text-2xl font-extrabold tracking-tight ${weeks[12].closingPaise < book.business.safety_buffer_paise ? 'text-[#FF9D93]' : 'text-[#F5C818]'}`}>{head.endsAt}</p>
+            <p className={`mt-1 text-2xl font-extrabold tracking-tight ${weeks[12].closingPaise < book.business.safety_buffer_paise ? 'text-[#FF9D93]' : 'text-[#7BE3A2]'}`}>{head.endsAt}</p>
           </div>
         </div>
         {weeks.some((w) => w.closingPaise < 0) && (
@@ -282,4 +285,8 @@ function ForecastTab() {
       </section>
     </>
   );
+}
+
+export default function MoneyPageGate() {
+  return <AuthGate><MoneyPage /></AuthGate>;
 }

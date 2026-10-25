@@ -5,18 +5,18 @@
 
 import { useEffect, useMemo, useState, use } from 'react';
 import Link from 'next/link';
-import QRCode from 'qrcode';
 import { supabase } from '../../../lib/supabase.js';
 import { loadBook, statusColor, statusLabel } from '../../../lib/data.js';
 import { recordPayment, logEvent } from '../../../lib/actions.js';
 import { formatINR, formatDateIN, amountInWords, todayIST } from '../../../engine/index.js';
 import { whatsappTemplate } from '../../../domain/chase.js';
 import { STATE_CODES } from '../../../engine/states.js';
+import { BackLink, Icon } from '../../../components/ui.js';
+import AuthGate from '../../../components/AuthGate.js';
 
-export default function InvoiceDetail({ params }) {
+function InvoiceDetail({ params }) {
   const { id } = use(params);
   const [book, setBook] = useState(null);
-  const [qr, setQr] = useState(null);
   const [payAmt, setPayAmt] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -33,10 +33,6 @@ export default function InvoiceDetail({ params }) {
     const am = (inv.outstanding / 100).toFixed(2);
     return `upi://pay?pa=${encodeURIComponent(biz.upi_id)}&pn=${encodeURIComponent(biz.name)}&am=${am}&cu=INR&tn=${encodeURIComponent((inv.number ?? 'Invoice') + ' payment')}`;
   }, [biz, inv]);
-
-  useEffect(() => {
-    if (upiLink) QRCode.toDataURL(upiLink, { width: 180, margin: 1 }).then(setQr).catch(() => {});
-  }, [upiLink]);
 
   if (!book) return <main className="mx-auto max-w-2xl p-6 text-[#9C9A92]">Loading…</main>;
   if (!inv || !cust || !biz) return <main className="mx-auto max-w-2xl p-6 text-[#C4392C]">Invoice nahi mila.</main>;
@@ -66,7 +62,7 @@ export default function InvoiceDetail({ params }) {
     <main className="mx-auto max-w-2xl px-4 pb-28 pt-5 md:px-8 md:pb-10 md:pt-8">
       {/* actions */}
       <div className="no-print mb-3 flex items-center justify-between">
-        <Link href="/invoices" className="inline-flex items-center gap-1 text-xs font-bold text-[#9C9A92]">← Bills</Link>
+        <BackLink href="/invoices" label="Bills" />
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${statusColor[inv.status]}`}>{statusLabel[inv.status]}</span>
       </div>
 
@@ -131,7 +127,8 @@ export default function InvoiceDetail({ params }) {
 
         <div className="mt-3 flex items-start justify-between gap-3">
           <div className="text-[11px] text-stone-600">
-            {qr && <img src={qr} alt="UPI QR" width={110} height={110} className="rounded-lg ring-1 ring-stone-200" />}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/upi-qr.png" alt="UPI QR" width={110} height={112} className="rounded-lg ring-1 ring-stone-200" />
             <p className="mt-1 font-semibold">Scan karke UPI se pay karein</p>
             <p className="text-stone-500">{biz.upi_id}</p>
           </div>
@@ -179,4 +176,8 @@ export default function InvoiceDetail({ params }) {
       )}
     </main>
   );
+}
+
+export default function InvoicePage(props) {
+  return <AuthGate><InvoiceDetail {...props} /></AuthGate>;
 }

@@ -1,7 +1,7 @@
 // Shared Gemini prompt + JSON schema for audio/text -> intent. The model only extracts
 // what was SAID; it never computes or looks up anything. Same output shape as src/voice/rules.js.
 
-export const INTENTS = ['add_credit', 'record_payment', 'add_customer', 'outstanding', 'reminder', 'unknown'];
+export const INTENTS = ['add_credit', 'record_payment', 'add_customer', 'delete_customer', 'outstanding', 'reminder', 'unknown'];
 
 export const SYSTEM_PROMPT = `You are the intent parser for "Baaki", a voice ledger for Indian shopkeepers.
 The user speaks Hindi, Hinglish, English, Marathi or a mix. Extract the command into JSON.
@@ -20,6 +20,7 @@ Rules:
   - add_credit: add goods/udhaar to the ledger ("400 ka samaan liya", "khaate me daalo").
   - record_payment: money received ("bheje", "payment aaya", "paisa diya").
   - add_customer: create a new customer/khaata.
+  - delete_customer: remove a customer's khaata entirely ("gupta ji ka khaata hatao", "delete karo").
   - outstanding: asking how much is due/baaki/hisaab ("kitna baaki hai", "kya total hai").
   - reminder: send a payment reminder ("yaad dila do", "reminder bhejo").
   - unknown: anything else (questions about weather, chit-chat, unclear audio).

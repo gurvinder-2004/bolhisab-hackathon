@@ -9,14 +9,29 @@ import { loadBook, statusColor, statusLabel } from '../../../lib/data.js';
 import { logEvent } from '../../../lib/actions.js';
 import { formatINR, formatDateIN } from '../../../engine/index.js';
 import { whatsappTemplate, CHANNEL_LABEL } from '../../../domain/chase.js';
-import { Avatar, Icon } from '../../../components/ui.js';
+import { Avatar, BackLink, Icon } from '../../../components/ui.js';
+import AuthGate from '../../../components/AuthGate.js';
+import { useRouter } from 'next/navigation';
+import { supabase } from '../../../lib/supabase.js';
 
 const GRADE_TEXT = {
   A: 'भरोसेमंद — waqt par bharta hai', B: 'Theek hai — thoda late', C: 'Dhyan rakho — late bharta hai', '-': 'Abhi data nahi',
 };
 
-export default function CustomerDetail({ params }) {
+function CustomerDetail({ params }) {
   const { id } = use(params);
+  const router = useRouter();
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const doDelete = async () => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('customers').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+      router.push('/customers');
+    } finally { setBusy(false); }
+  };
   const [book, setBook] = useState(null);
   useEffect(() => { loadBook().then(setBook).catch(() => {}); }, []);
   if (!book) return <main className="mx-auto max-w-2xl p-6 text-[#9C9A92]">Loading…</main>;
@@ -37,9 +52,7 @@ export default function CustomerDetail({ params }) {
 
   return (
     <main className="mx-auto max-w-2xl px-4 pb-28 pt-5 md:px-8 md:pb-10 md:pt-8">
-      <Link href="/customers" className="mb-3 inline-flex items-center gap-1 text-xs font-bold text-[#9C9A92]">
-        <Icon name="chevron" className="h-3.5 w-3.5 rotate-180" /> Log
-      </Link>
+      <BackLink href="/customers" label="Customers" className="mb-3" />
 
       {/* black hero */}
       <header className="flex items-center gap-4 rounded-[2rem] bg-[#141216] p-5 text-white">
@@ -50,10 +63,37 @@ export default function CustomerDetail({ params }) {
           <p className="truncate text-[11px] text-white/40">{c.phone} {c.gstin ? `· GSTIN ${c.gstin}` : '· unregistered'}</p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-2xl font-extrabold tracking-tight text-[#F5C818]">{formatINR(c.balancePaise)}</p>
+          <p className="text-2xl font-extrabold tracking-tight text-[#FF9D93]">{formatINR(c.balancePaise)}</p>
           <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/50">kul baaki</p>
         </div>
       </header>
+
+      <div className="mt-3 flex justify-end no-print">
+        <button onClick={() => setConfirmDel(true)}
+          className="flex items-center gap-1.5 rounded-full bg-white px-4 py-2.5 text-xs font-bold text-[#C4392C] ring-1 ring-[#F8CFC9] transition hover:bg-[#FDE7E4] active:scale-95">
+          <Icon name="trash" className="h-4 w-4" /> Delete khaata
+        </button>
+      </div>
+      {confirmDel && (
+        <div className="fixed inset-0 z-40 flex items-end bg-[#1A181C]/55 p-4 backdrop-blur-[2px] md:items-center" onClick={() => setConfirmDel(false)}>
+          <div className="w-full rounded-[2rem] bg-white p-6 shadow-2xl md:mx-auto md:max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="flex items-center gap-2 text-base font-extrabold tracking-tight text-[#C4392C]">
+              <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#FDE7E4] text-[#C4392C]"><Icon name="trash" className="h-4 w-4" /></span>
+              {c.name} ka khaata delete karein?
+            </h3>
+            <p className="mt-3 rounded-2xl bg-[#FDE7E4]/60 p-3 text-xs font-semibold text-[#C4392C] ring-1 ring-[#F8CFC9]">
+              {c.openInvoices.length} bills, khata entries aur poora record hamesha ke liye chala jayega.
+              {c.balancePaise > 0 ? ` Baaki: ${formatINR(c.balancePaise)}.` : ''} Ye wapas nahi aayega.
+            </p>
+            <div className="mt-4 flex gap-3">
+              <button onClick={() => setConfirmDel(false)} className="flex-1 rounded-2xl bg-[#F2F0EA] py-3.5 text-sm font-bold text-[#6B6960] ring-1 ring-[#E5E3DC] active:scale-[0.98]">Nahi, rehne do</button>
+              <button onClick={doDelete} disabled={busy} className="flex-1 rounded-2xl bg-[#F05A4F] py-3.5 text-sm font-extrabold text-white active:scale-[0.98] disabled:opacity-50">
+                {busy ? 'Delete ho raha…' : 'Haan, delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* grade + breakdown */}
       <section className="mt-3 grid grid-cols-2 gap-3">
@@ -125,4 +165,8 @@ export default function CustomerDetail({ params }) {
       )}
     </main>
   );
+}
+
+export default function CustomerPage(props) {
+  return <AuthGate><CustomerDetail {...props} /></AuthGate>;
 }

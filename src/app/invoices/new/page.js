@@ -5,17 +5,17 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { supabase } from '../../../lib/supabase.js';
 import { loadBook } from '../../../lib/data.js';
 import { getBusiness } from '../../../lib/actions.js';
 import { computeInvoice, toPaise, formatINR, amountInWords, todayIST, addDays, nextInvoiceNumber } from '../../../engine/index.js';
 import { GST_RATES } from '../../../config.js';
-import { Icon } from '../../../components/ui.js';
+import { BackLink, Icon } from '../../../components/ui.js';
+import AuthGate from '../../../components/AuthGate.js';
 
 const emptyLine = { description: '', hsn: '', unit: 'pcs', qty: '1', rate: '', gstRatePct: 5 };
 
-export default function NewInvoice() {
+function NewInvoice() {
   const router = useRouter();
   const [book, setBook] = useState(null);
   const [customerId, setCustomerId] = useState('');
@@ -79,9 +79,7 @@ export default function NewInvoice() {
   return (
     <main className="mx-auto max-w-2xl px-4 pb-28 pt-5 md:px-8 md:pb-10 md:pt-8">
       <header className="mb-4 flex items-center justify-between">
-        <Link href="/invoices" className="inline-flex items-center gap-1 text-xs font-bold text-[#9C9A92]">
-          <Icon name="chevron" className="h-3.5 w-3.5 rotate-180" /> Bills
-        </Link>
+        <BackLink href="/invoices" label="Bills" />
         <h1 className="text-lg font-extrabold tracking-tight">Nayi bill</h1>
       </header>
 
@@ -157,4 +155,8 @@ export default function NewInvoice() {
       </div>
     </main>
   );
+}
+
+export default function NewInvoicePage(props) {
+  return <AuthGate><NewInvoice {...props} /></AuthGate>;
 }

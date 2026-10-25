@@ -1,8 +1,7 @@
 'use client';
 
-// Home — the reference-design flagship: greeting header, purple voice hero,
-// black balance card, snapshot stats, latest hisab, chase list, ageing.
-// Realtime subscription kept intact so voice entries appear live.
+// Home — greeting header, purple voice hero, black balance card, snapshot stats,
+// latest hisab, follow-ups, ageing. Realtime kept intact.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -10,14 +9,17 @@ import { supabase } from '../../lib/supabase.js';
 import { loadBook } from '../../lib/data.js';
 import { formatINR } from '../../engine/index.js';
 import { CHANNEL_LABEL } from '../../domain/chase.js';
-import { Avatar, Eyebrow, Icon, StatCard, dateEyebrow } from '../../components/ui.js';
+import { Avatar, Eyebrow, Icon, dateEyebrow } from '../../components/ui.js';
+import { useLang } from '../../lib/lang.js';
+import AuthGate from '../../components/AuthGate.js';
 
 const AGE_LABELS = { not_due: 'Due nahi', '1-30': '1–30 din', '31-60': '31–60 din', '61-90': '61–90 din', '90+': '90+' };
 const AGE_BAR = { not_due: '#DDD0FA', '1-30': '#F5C818', '31-60': '#E0A81F', '61-90': '#E88A5A', '90+': '#F05A4F' };
 
 const dayOf = (isoLike) => String(isoLike || '').slice(0, 10);
 
-export default function Dashboard() {
+function Dashboard() {
+  const { t } = useLang();
   const [book, setBook] = useState(null);
   const [err, setErr] = useState(null);
 
@@ -50,8 +52,8 @@ export default function Dashboard() {
     return { aajMila, kalMila, aajDiya, rows, kal };
   }, [book]);
 
-  if (err) return <main className="mx-auto max-w-md p-6 text-[#F05A4F]">Load nahi hua: {err}</main>;
-  if (!book || !derived) return <main className="mx-auto max-w-md p-6 text-[#9C9A92]">Loading…</main>;
+  if (err) return <main className="mx-auto max-w-3xl p-6 text-[#C4392C]">Load nahi hua: {err}</main>;
+  if (!book || !derived) return <main className="mx-auto max-w-3xl p-6 text-[#9C9A92]">Loading…</main>;
 
   const firstName = (book.business?.owner_name || book.business?.name || 'Boss').trim().split(/\s+/)[0];
   const age = book.ageing;
@@ -67,7 +69,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           <Link href="/customers" className="hidden items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-[#9C9A92] ring-1 ring-[#E5E3DC] md:flex">
-            <Icon name="search" className="h-4 w-4" /> Customer khojein…
+            <Icon name="search" className="h-4 w-4" /> {t('search')}
           </Link>
           <Link href="#followups" className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white ring-1 ring-[#E5E3DC]">
             <Icon name="bell" className="h-5 w-5" />
@@ -84,63 +86,82 @@ export default function Dashboard() {
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em]">
               <Icon name="sparkle" className="h-3.5 w-3.5" /> AI Voice Entry
             </span>
-            <h2 className="mt-3 text-2xl font-extrabold leading-tight tracking-tight md:text-[2rem]">Bas bolo,<br />hisab ho jayega.</h2>
-            <p className="mt-2 text-sm font-medium text-white/70">Boliye — “Sharma ji ne 5,000 ka samaan liya, UPI se jama”</p>
+            <h2 className="mt-3 text-2xl font-extrabold leading-tight tracking-tight md:text-[2rem]">{t('hero')}</h2>
+            <p className="mt-2 text-sm font-medium text-white/70">{t('heroSub')}</p>
             <div className="mt-4 flex flex-wrap gap-2">
               {['Hinglish', 'हिंदी', 'English'].map((l) => (
                 <span key={l} className="rounded-full border border-white/25 px-3 py-1 text-[11px] font-semibold text-white/85">{l}</span>
               ))}
             </div>
           </div>
-          <Link href="/" aria-label="Bolo"
+          <Link href="/bolo" aria-label="Bolo"
             className="absolute bottom-6 right-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#F5C818] text-[#1A181C] shadow-[0_16px_36px_-10px_rgba(0,0,0,0.45)] transition hover:scale-105 active:scale-95 md:h-24 md:w-24">
             <Icon name="mic" className="h-9 w-9 md:h-10 md:w-10" />
           </Link>
         </section>
 
-        {/* ---------- balance card ---------- */}
+        {/* ---------- balance card (dues = red) ---------- */}
         <section className="flex flex-col justify-between rounded-[2rem] bg-[#141216] p-6 text-white">
           <div className="flex items-start justify-between">
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">Aapko milega (total baaki)</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">{t('collect')}</p>
             <span className="text-white/40">···</span>
           </div>
-          <p className="mt-2 text-4xl font-extrabold tracking-tight md:text-[2.75rem] md:leading-none">{formatINR(book.toCollectPaise)}</p>
+          <p className="mt-2 text-4xl font-extrabold tracking-tight text-[#FF9D93] md:text-[2.75rem] md:leading-none">{formatINR(book.toCollectPaise)}</p>
           <div className="mt-6 space-y-3 border-t border-white/10 pt-4 text-sm">
             <Link href="/invoices?status=overdue" className="flex items-center justify-between rounded-2xl px-2 py-1.5 transition hover:bg-white/5">
               <span className="flex items-center gap-3 text-white/75">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F5C818]/20 text-[#F5C818]"><Icon name="downLeft" className="h-4 w-4" /></span>
-                Gale pade (overdue)
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F05A4F]/20 text-[#FF9D93]"><Icon name="bell" className="h-4 w-4" /></span>
+                {t('overdue')}
               </span>
-              <span className="font-extrabold text-[#F5C818]">{formatINR(book.overduePaise)}</span>
+              <span className="font-extrabold text-[#FF9D93]">{formatINR(book.overduePaise)}</span>
             </Link>
             <Link href="/invoices?status=due_soon" className="flex items-center justify-between rounded-2xl px-2 py-1.5 transition hover:bg-white/5">
               <span className="flex items-center gap-3 text-white/75">
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#8B5CF6]/25 text-[#B79BFA]"><Icon name="upRight" className="h-4 w-4" /></span>
-                Is hafte due
+                {t('weekDue')}
               </span>
-              <span className="font-extrabold text-[#B79BFA]">{formatINR(book.dueThisWeekPaise)}</span>
+              <span className="font-extrabold text-[#FF9D93]">{formatINR(book.dueThisWeekPaise)}</span>
             </Link>
           </div>
         </section>
       </div>
 
-      {/* ---------- snapshot ---------- */}
+      {/* ---------- snapshot (received = green, credit given = red) ---------- */}
       <section className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard tone="yellow" icon="downLeft" label="Aaj mila" value={formatINR(derived.aajMila)}
-          sub={derived.aajMila >= derived.kalMila ? `Kal se +${formatINR(derived.aajMila - derived.kalMila)}` : `Kal se −${formatINR(derived.kalMila - derived.aajMila)}`}
-          iconBg="bg-[#1A181C]/10" />
-        <StatCard tone="violet" icon="upRight" label="Aaj udhaar" value={formatINR(derived.aajDiya)}
-          sub={derived.aajDiya ? 'Naya maal gaya' : 'Aaj kuch nahi'} iconBg="bg-white/15" />
-        <StatCard icon="users" label="Total customers" value={String(book.customers.length)} sub="Khata chal rahi hai" />
-        <StatCard icon="bell" label="Aaj chase karna" value={String(book.followUps.length)} sub="Peeth peeche padein" />
+        <div className="rounded-3xl bg-white p-4 ring-1 ring-[#E5E3DC]">
+          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#E7F6EC] text-[#1B7A3D]"><Icon name="downLeft" className="h-4 w-4" /></span>
+          <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#9C9A92]">{t('aajMila')}</p>
+          <p className="mt-0.5 text-2xl font-extrabold tracking-tight text-[#1B7A3D]">{formatINR(derived.aajMila)}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-[#9C9A92]">
+            {derived.aajMila >= derived.kalMila ? `Kal se +${formatINR(derived.aajMila - derived.kalMila)}` : `Kal se −${formatINR(derived.kalMila - derived.aajMila)}`}
+          </p>
+        </div>
+        <div className="rounded-3xl bg-white p-4 ring-1 ring-[#E5E3DC]">
+          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#FDE7E4] text-[#C4392C]"><Icon name="upRight" className="h-4 w-4" /></span>
+          <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#9C9A92]">{t('aajUdhaar')}</p>
+          <p className="mt-0.5 text-2xl font-extrabold tracking-tight text-[#C4392C]">{formatINR(derived.aajDiya)}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-[#9C9A92]">{derived.aajDiya ? 'Naya maal gaya' : 'Aaj kuch nahi'}</p>
+        </div>
+        <div className="rounded-3xl bg-white p-4 ring-1 ring-[#E5E3DC]">
+          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#F2F0EA] text-[#1A181C]"><Icon name="users" className="h-4 w-4" /></span>
+          <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#9C9A92]">{t('totalCust')}</p>
+          <p className="mt-0.5 text-2xl font-extrabold tracking-tight">{String(book.customers.length)}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-[#9C9A92]">Khata chal rahi hai</p>
+        </div>
+        <div className="rounded-3xl bg-[#F5C818] p-4">
+          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-black/10 text-[#1A181C]"><Icon name="bell" className="h-4 w-4" /></span>
+          <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] opacity-70">{t('chaseAaj')}</p>
+          <p className="mt-0.5 text-2xl font-extrabold tracking-tight">{String(book.followUps.length)}</p>
+          <p className="mt-0.5 text-[11px] font-medium opacity-70">Reminder bhejein</p>
+        </div>
       </section>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         {/* ---------- latest hisab ---------- */}
         <section className="rounded-[1.75rem] bg-white p-5 ring-1 ring-[#E5E3DC]">
           <div className="mb-3 flex items-baseline justify-between">
-            <h2 className="text-base font-extrabold tracking-tight">Latest hisab</h2>
-            <Link href="/customers" className="text-xs font-bold text-[#6D3FD8]">Sab dekhein →</Link>
+            <h2 className="text-base font-extrabold tracking-tight">{t('latest')}</h2>
+            <Link href="/customers" className="text-xs font-bold text-[#6D3FD8]">{t('viewAll')} →</Link>
           </div>
           {derived.rows.length ? derived.rows.map((r) => (
             <div key={r.id} className="flex items-center gap-3 border-b border-[#F2F0EA] py-2.5 last:border-0">
@@ -151,7 +172,7 @@ export default function Dashboard() {
                   {r.kind === 'payment' ? 'Payment aaya' : 'Udhaar diya'}{r.note ? ` · ${r.note}` : ''} · {dayOf(r.when) === book.today ? 'Aaj' : dayOf(r.when) === derived.kal ? 'Kal' : dayOf(r.when)}
                 </p>
               </div>
-              <p className={`shrink-0 text-sm font-extrabold ${r.kind === 'payment' ? 'text-[#1A181C]' : 'text-[#6D3FD8]'}`}>
+              <p className={`shrink-0 text-sm font-extrabold ${r.kind === 'payment' ? 'text-[#1B7A3D]' : 'text-[#C4392C]'}`}>
                 {r.kind === 'payment' ? '+' : ''}{formatINR(r.paise)}
               </p>
             </div>
@@ -161,7 +182,7 @@ export default function Dashboard() {
         {/* ---------- follow-ups ---------- */}
         <section id="followups" className="rounded-[1.75rem] bg-white p-5 ring-1 ring-[#E5E3DC]">
           <div className="mb-3 flex items-baseline justify-between">
-            <h2 className="text-base font-extrabold tracking-tight">Aaj kisko peeche padein</h2>
+            <h2 className="text-base font-extrabold tracking-tight">{t('followups')}</h2>
             <span className="text-xs font-semibold text-[#9C9A92]">{book.followUps.length} pending</span>
           </div>
           {book.followUps.slice(0, 5).map((f) => (
@@ -170,14 +191,14 @@ export default function Dashboard() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-bold">{f.name} <span className="font-medium text-[#9C9A92]">· {f.area || f.city || ''}</span></p>
                 <p className="flex items-center gap-1.5 text-[11px] text-[#9C9A92]">
-                  <span className="font-bold text-[#F05A4F]">{f.daysOverdue} din late</span> · {f.number}
+                  <span className="font-bold text-[#C4392C]">{f.daysOverdue} din late</span> · {f.number}
                   <span className={`rounded-full px-1.5 py-px text-[9px] font-bold uppercase tracking-wide
                     ${f.action === 'whatsapp' ? 'bg-[#E7F6EC] text-[#1B7A3D]' : f.action === 'call' ? 'bg-[#FDF3C7] text-[#8A6D00]' : 'bg-[#EDE7FE] text-[#6D28D9]'}`}>
                     {CHANNEL_LABEL[f.action]}
                   </span>
                 </p>
               </div>
-              <p className="shrink-0 text-sm font-extrabold">{formatINR(f.outstandingPaise)}</p>
+              <p className="shrink-0 text-sm font-extrabold text-[#C4392C]">{formatINR(f.outstandingPaise)}</p>
               <Link href={`/customers/${f.customerId}`} className="shrink-0 text-[#9C9A92]"><Icon name="chevron" className="h-4 w-4" /></Link>
             </div>
           ))}
@@ -188,7 +209,7 @@ export default function Dashboard() {
       {/* ---------- ageing ---------- */}
       <section className="mt-4 rounded-[1.75rem] bg-white p-5 ring-1 ring-[#E5E3DC]">
         <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-base font-extrabold tracking-tight">Ageing — baaki kitni purani hai</h2>
+          <h2 className="text-base font-extrabold tracking-tight">{t('ageing')}</h2>
           <Link href="/invoices" className="text-xs font-bold text-[#6D3FD8]">Invoices →</Link>
         </div>
         {Object.entries(age).map(([k, v]) => (
@@ -197,10 +218,14 @@ export default function Dashboard() {
             <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[#F2F0EA]">
               <div className="h-full rounded-full" style={{ width: `${Math.round((v / ageMax) * 100)}%`, background: AGE_BAR[k] }} />
             </div>
-            <span className="w-20 shrink-0 text-right text-sm font-bold">{formatINR(v)}</span>
+            <span className="w-20 shrink-0 text-right text-sm font-bold text-[#C4392C]">{formatINR(v)}</span>
           </div>
         ))}
       </section>
     </main>
   );
+}
+
+export default function DashboardPage() {
+  return <AuthGate><Dashboard /></AuthGate>;
 }

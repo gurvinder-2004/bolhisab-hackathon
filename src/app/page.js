@@ -1,851 +1,218 @@
 'use client';
 
-// BolHisab voice console. Mic -> /api/voice -> resolve customer -> "kaunse Gupta ji?" ->
-// confirm card (big amount + words, read aloud) -> auto-reopened mic listens for
-// "haan"/"nahi" (or "pehla"/"doosra") -> executes -> spoken confirmation + undo window.
-// Tap or type always works as the manual fallback.
+// BolHisab landing — pure white, animated hero, two doors: Web Dashboard and APK.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase.js';
-import { mapCustomerRow } from '../lib/ledger.js';
-import { resolveCustomer, describeCandidates } from '../domain/match.js';
-import { formatINR, formatDateIN, toPaise, amountInWords, todayIST } from '../engine/index.js';
-import {
-  insertCreditEntry, recordPayment, insertCustomer, undoWrite, logEvent, outstandingForCustomer,
-  createVoiceBill,
-} from '../lib/actions.js';
-import { Avatar, Icon } from '../components/ui.js';
+import { useEffect } from 'react';
+import Link from 'next/link';
+import { Icon } from '../components/ui.js';
 
-const STATUS = {
-  idle: 'Boliye — "Gupta ji 400 ka samaan liya"',
-  rec: 'Sun raha hoon… (tap karke rokiye)',
-  think: 'Samajh raha hoon…',
-  listen: (what) => `Sun raha hoon… boliye: ${what}`,
-};
+const FEATURES = [
+  { icon: 'mic', tint: 'bg-[#FDF3C7] text-[#8A6D00]', title: 'Bol kar entry', body: '“Sharma ji ne 110 ki sabji, 90 ka tel liya” — sunta hai, dohraata hai, haan bolte hi bill ban jaata hai.' },
+  { icon: 'book', tint: 'bg-[#DDD0FA] text-[#4A2FA6]', title: 'GST bills + UPI', body: 'Tax Invoice engine with live CGST/SGST maths, print-ready format, QR pay link jo customer khud verify kare.' },
+  { icon: 'bell', tint: 'bg-[#FDE7E4] text-[#C4392C]', title: 'Payment chasing', body: 'WhatsApp → call → letter ladder khud chalti hai. A/B/C grades batati hain kis se pehle paisa aane wala hai.' },
+  { icon: 'chart', tint: 'bg-[#E0EBFB] text-[#2058C8]', title: 'Bank import + forecast', body: 'Statement paste karo — 6 tarah ke matches, TDS alag se. 13-hafte cash forecast with what-if.' },
+];
 
-export default function VoiceConsole() {
-  const [customers, setCustomers] = useState([]);
-  const [phase, setPhase] = useState('idle'); // idle | rec | think | listen
-  const [heard, setHeard] = useState('');
-  const [card, setCardState] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [lastWrite, setLastWrite] = useState(null);
-  const [recents, setRecents] = useState([]);
-  const [typed, setTyped] = useState('');
-  const recorder = useRef(null);
-  const chunks = useRef([]);
-  const streamRef = useRef(null);      // persistent mic stream (echo-cancelled)
-  const audioCtxRef = useRef(null);    // shared AudioContext for VAD
-  const stopRecordingRef = useRef(null); // active recording's stop fn (VAD cleanup)
+function Reveal({ children, className = '', delay = 0 }) {
+  return (
+    <div className={`reveal ${className}`} style={{ transitionDelay: `${delay}ms` }}>{children}</div>
+  );
+}
 
-  // voice-confirm loop state (refs: survive async answer handling)
-  const cardRef = useRef(null);
-  const listenCtx = useRef(null);      // 'confirm' | 'choose' | null
-  const listenTrials = useRef(0);
-  const handleParsedRef = useRef(() => {});
-  const setCard = useCallback((c) => { cardRef.current = c; setCardState(c); }, []);
-
-  const loadCustomers = useCallback(async () => {
-    const { data } = await supabase.from('customers').select('*').order('name');
-    setCustomers((data ?? []).map(mapCustomerRow));
-  }, []);
-
-  const loadRecents = useCallback(async () => {
-    const [c, p] = await Promise.all([
-      supabase.from('credit_entries').select('*, customers(name)').order('created_at', { ascending: false }).limit(5),
-      supabase.from('payments').select('*, customers(name)').order('created_at', { ascending: false }).limit(5),
-    ]);
-    const rows = [
-      ...(c.data ?? []).map((r) => ({ id: r.id, kind: 'credit', name: r.customers?.name ?? '—', paise: r.amount_paise, when: r.created_at, note: r.note })),
-      ...(p.data ?? []).map((r) => ({ id: r.id, kind: 'payment', name: r.customers?.name ?? '—', paise: r.amount_paise, when: r.created_at, mode: r.mode })),
-    ].sort((a, b) => (a.when < b.when ? 1 : -1));
-    setRecents(rows.slice(0, 6));
-  }, []);
-
-  useEffect(() => { loadCustomers(); loadRecents(); }, [loadCustomers, loadRecents]);
-
-  // ---------- TTS ----------
-  // Robust on all engines: fires onEnd on the real end event; if the engine never fires
-  // events, a poll notices speaking===false; a 30s cap guarantees we never hang.
-  // We NEVER cancel a speaking question mid-sentence.
-  const speak = useCallback((text, onEnd) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return onEnd?.(false);
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    const voices = synth.getVoices();
-    const v = voices.find((x) => x.lang?.startsWith('hi')) || voices.find((x) => x.lang?.startsWith('en-IN')) || voices.find((x) => x.lang?.startsWith('en'));
-    if (v) u.voice = v;
-    u.lang = v?.lang || 'hi-IN';
-    u.rate = 0.95;
-    let done = false, poll = null;
-    const finish = (spoke) => { if (!done) { done = true; if (poll) clearInterval(poll); onEnd?.(spoke); } };
-    u.onend = () => finish(true);
-    u.onerror = () => finish(false);
-    synth.speak(u);
-    setTimeout(() => { // engines that never fire events: watch the speaking flag
-      if (done) return;
-      poll = setInterval(() => { if (!synth.speaking && !synth.pending) finish(true); }, 300);
-    }, 1000);
-    setTimeout(() => finish(true), 30000);
-  }, []);
-
-  // ---------- voice-confirm loop ----------
-  const cancelListen = useCallback(() => {
-    listenCtx.current = null;
-    listenTrials.current = 0;
-    stopRecordingRef.current?.();
-  }, []);
-
-  const base64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
-
-  // One persistent mic stream for the whole session (echo-cancelled). Repeated
-  // getUserMedia open/close cycles on Android yield silent tracks — that was the
-  // "mic opens but hears nothing" bug.
-  const getStream = async () => {
-    if (streamRef.current?.active) return streamRef.current;
-    const s = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-    streamRef.current = s;
-    return s;
-  };
-  const getAudioCtx = () => {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') audioCtxRef.current = new AC();
-    return audioCtxRef.current;
-  };
-  // short cue so the shopkeeper knows the mic is live and it's their turn to speak
-  const beep = useCallback(() => {
-    try {
-      const actx = getAudioCtx();
-      if (actx.state === 'suspended') actx.resume().catch(() => {});
-      const o = actx.createOscillator(), g = actx.createGain();
-      o.frequency.value = 880;
-      g.gain.value = 0.08;
-      o.connect(g); g.connect(actx.destination);
-      o.start(); o.stop(actx.currentTime + 0.12);
-    } catch {}
-  }, []);
-
-  // mode 'command' (user tapped the mic) | 'answer' (auto-opened after a spoken question).
-  // Recording ends 1.2s after speech goes quiet (VAD) — never mid-sentence — with hard caps.
-  const startRec = useCallback(async (mode) => {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      if (mode === 'answer') return false; // manual fallback stays available
-      setCard({ type: 'error', message: 'Is browser mein mic nahi chalta. Neeche type karke command bhejein.' });
-      return false;
-    }
-    try {
-      const stream = await getStream();
-      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
-      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-      chunks.current = [];
-      let didSpeak = false;
-      rec.ondataavailable = (e) => e.data.size && chunks.current.push(e.data);
-      rec.onstop = async () => {
-        stopRecordingRef.current = null;
-        const blob = new Blob(chunks.current, { type: rec.mimeType });
-        if (!didSpeak || blob.size < 1000) {
-          setPhase('idle');
-          if (mode === 'command') { setCard({ type: 'error', message: 'Awaaz nahi pahunchi. Mic ke paas boliye aur dobara try karein.' }); return; }
-          // answer too short/quiet: count it as a failed try and re-open the mic silently
-          if (listenCtx.current && ++listenTrials.current < (listenCtx.current === 'choose' ? 3 : 2)) { listenFor(listenCtx.current); return; }
-          listenCtx.current = null;
-          speak('Awaaz nahi pahunchi. Screen par tap kariye.');
-          return;
-        }
-        if (mode === 'answer') { setPhase('think'); await sendAnswer(blob, rec.mimeType); setPhase('idle'); return; }
-        setPhase('think');
-        try {
-          const res = await fetch('/api/voice', {
-            method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ audioBase64: base64(await blob.arrayBuffer()), mimeType: rec.mimeType }),
-          });
-          const j = await res.json();
-          if (!j.ok) throw new Error(j.error);
-          handleParsedRef.current(j.parsed);
-        } catch {
-          setCard({ type: 'error', message: 'Network/model se connect nahi ho paya. Dobara try karein ya type karein.' });
-        } finally { setPhase('idle'); }
-      };
-      recorder.current = rec;
-      rec.start(250); // timeslice keeps audio flushing; avoids lost-tail bugs
-      setPhase(mode === 'answer' ? 'listen' : 'rec');
-      if (mode === 'answer') beep(); // "your turn" cue: the question has ended, speak now
-      if (mode === 'command') {
-        setCard(null); setHeard(''); setLastWrite(null);
-        if ('speechSynthesis' in window) window.speechSynthesis.cancel(); // user wants to talk NOW
-      }
-
-      // voice-activity stop: end 1.2s after speech goes quiet; hard cap otherwise
-      const capMs = mode === 'answer' ? 10000 : 15000;
-      let vadTimer = null, safety = null, srcNode = null;
-      let heardSpeech = false, lastLoud = 0;
-      const finish = () => {
-        if (vadTimer) clearInterval(vadTimer);
-        if (safety) clearTimeout(safety);
-        try { srcNode?.disconnect(); } catch {}
-        try { if (rec.state === 'recording') rec.stop(); } catch {}
-      };
-      stopRecordingRef.current = finish;
-      try {
-        const actx = getAudioCtx();
-        if (actx.state === 'suspended') actx.resume().catch(() => {});
-        srcNode = actx.createMediaStreamSource(stream);
-        const an = actx.createAnalyser();
-        an.fftSize = 512;
-        srcNode.connect(an);
-        const buf = new Float32Array(an.fftSize);
-        const t0 = Date.now();
-        vadTimer = setInterval(() => {
-          an.getFloatTimeDomainData(buf);
-          let sum = 0;
-          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-          const rms = Math.sqrt(sum / buf.length);
-          const now = Date.now();
-          if (rms > 0.015) { heardSpeech = true; didSpeak = true; lastLoud = now; }
-          // never stop before 800ms: one-word answers ("pehla") need their pre-roll kept
-          if (now - t0 > capMs || (now - t0 > 800 && heardSpeech && now - lastLoud > 1200)) finish();
-        }, 100);
-      } catch { /* VAD unavailable: plain cap below still ends the recording */ }
-      safety = setTimeout(finish, capMs + 1000);
-      return true;
-    } catch (e) {
-      if (mode === 'command') setCard({ type: 'error', message: e?.name === 'NotAllowedError' ? 'Mic ki permission chahiye. Browser settings mein allow karein.' : 'Mic khul nahi paya. Type karke bhejein.' });
-      return false;
-    }
-  }, [setCard, beep]);
-
-  // Schedule the answer mic WITHOUT resetting the retry count (retries call this).
-  // The mic only opens once the spoken question has actually finished — the old code
-  // could open it while TTS was still talking and record the app's own voice.
-  const listenFor = useCallback((ctx) => {
-    listenCtx.current = ctx;
-    setPhase('listen');
-    const open = () => setTimeout(() => { if (listenCtx.current === ctx) startRec('answer'); }, 500);
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const synth = window.speechSynthesis;
-      if (synth.speaking || synth.pending) {
-        const t0 = Date.now();
-        const wait = setInterval(() => {
-          if (listenCtx.current !== ctx) { clearInterval(wait); return; }
-          if ((!synth.speaking && !synth.pending) || Date.now() - t0 > 25000) { clearInterval(wait); open(); }
-        }, 250);
-        return;
-      }
-    }
-    open();
-  }, [startRec]);
-
-  // Begin a fresh question cycle: resets retries, then listens.
-  const beginListen = useCallback((ctx) => {
-    listenTrials.current = 0;
-    listenFor(ctx);
-  }, [listenFor]);
-
-  const sendAnswer = async (blob, mimeType) => {
-    const ctx = listenCtx.current;
-    const c = cardRef.current;
-    if (!ctx || !c) return;
-    try {
-      const res = await fetch('/api/voice', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ audioBase64: base64(await blob.arrayBuffer()), mimeType, context: ctx }),
-      });
-      const j = await res.json();
-      if (!j.ok) throw new Error(j.error);
-      // through the ref: the recording closure is stale (first render, customers=[])
-      // and would drop correct answers — this bit us for days as "samajh nahi aaya"
-      handleAnswerRef.current(j.parsed, c, ctx);
-    } catch {
-      // network hiccup: one more try, then leave it to manual
-      if (++listenTrials.current < 2) listenFor(ctx); else listenCtx.current = null;
-    }
-  };
-
-  const handleAnswer = (ans, c, ctx) => {
-    if (ctx === 'confirm') {
-      if (ans.answer === 'yes') {
-        listenCtx.current = null;
-        // single fuzzy match: "Sahi hai?" -> yes means "that's the one, continue"
-        if (c.type === 'disambiguate') {
-          const cust = customers.find((x) => x.id === c.candidates[0].id);
-          if (cust) {
-            if (c.parsed?.intent === 'outstanding') answerOutstandingRef.current(cust, c.parsed);
-            else confirmForRef.current(cust, c.parsed);
-          }
-          return;
-        }
-        submitCardRef.current();
-        return;
-      }
-      if (ans.answer === 'no') {
-        listenCtx.current = null;
-        setCard(null);
-        speak('Theek hai, cancel kar diya.');
-        return;
-      }
-      if (++listenTrials.current < 2) {
-        speak('Samajh nahi aaya. Haan ya nahi boliye — ya screen par button dabaiye.', () => listenFor('confirm'));
-      } else { listenCtx.current = null; speak('Screen par button dabaiye.'); }
-      return;
-    }
-    if (ctx === 'choose') {
-      const candCustomers = c.candidates
-        .map((x) => customers.find((cu) => cu.id === x.id))
-        .filter(Boolean);
-      const again = () => {
-        const heardBit = ans.heard ? ` Maine suna: ${ans.heard}.` : '';
-        const short = candCustomers.length === 2 ? 'Pehla ya doosra boliye.' : 'Number boliye.';
-        if (++listenTrials.current < 3) speak(`Samajh nahi aaya.${heardBit} ${short}`, () => listenFor('choose'));
-        else { listenCtx.current = null; speak('Screen par naam tap kariye.'); }
-      };
-      if (ans.wantsNew) {
-        listenCtx.current = null;
-        openNewCustomerCardRef.current(c.parsed, 'confirm');
-        return;
-      }
-      let chosen = null;
-      if (Number.isInteger(ans.choiceIndex) && ans.choiceIndex >= 1 && ans.choiceIndex <= candCustomers.length) chosen = candCustomers[ans.choiceIndex - 1];
-      else if (ans.customerName) {
-        const r = resolveCustomer(ans.customerName, candCustomers);
-        if (r.status === 'unique') chosen = r.candidates[0].customer;
-        else if (r.status === 'ambiguous' && r.candidates.length === candCustomers.length) {
-          // said a name that matches ALL options (e.g. "gupta wala" for two Guptas): ask for position
-          again();
-          return;
-        }
-      }
-      if (chosen) {
-        listenCtx.current = null;
-        if (c.parsed?.intent === 'outstanding') answerOutstandingRef.current(chosen, c.parsed);
-        else confirmForRef.current(chosen, c.parsed);
-        return;
-      }
-      again();
-    }
-  };
-
-  // keep latest callbacks reachable from the async answer path
-  const submitCardRef = useRef(() => {});
-  const answerOutstandingRef = useRef(() => {});
-  const confirmForRef = useRef(() => {});
-  const openNewCustomerCardRef = useRef(() => {});
-  const handleAnswerRef = useRef(() => {});
-
-  const stopRec = useCallback(() => {
-    // mid-recording tap: stop cleanly, the audio gathered so far is still processed
-    if (stopRecordingRef.current) { stopRecordingRef.current(); return; }
-    cancelListen(); // tapped while waiting to listen: skip voice answering
-  }, [cancelListen]);
-
-  // release the persistent mic when the page goes away
-  useEffect(() => () => {
-    try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
-    try { audioCtxRef.current?.close(); } catch {}
-  }, []);
-
-  // ---------- pipeline after parse ----------
-  const answerOutstanding = useCallback(async (customer, parsed) => {
-    if (customer) {
-      const b = await outstandingForCustomer(customer.id);
-      const rupees = formatINR(Math.max(0, b.balancePaise));
-      const spoken = `${customer.name} ka ${rupees} baaki hai`;
-      setCard({
-        type: 'answer',
-        title: `${customer.name}${customer.area ? ' · ' + customer.area : ''}`,
-        big: rupees,
-        words: amountInWords(Math.max(0, b.balancePaise)),
-        lines: [
-          `Bills par: ${formatINR(Math.max(0, b.invoiceOutstandingPaise))} (${b.openInvoices.length} khuli)`,
-          `Khata (udhaar): ${formatINR(b.creditsPaise)}`,
-          b.onAccountPaise > 0 ? `Advance jama: -${formatINR(b.onAccountPaise)}` : null,
-        ].filter(Boolean),
-      });
-      speak(spoken);
-    } else {
-      const [inv, alloc, pay, cred] = await Promise.all([
-        supabase.from('invoices').select('id,total_paise,due_date,status_override'),
-        supabase.from('payment_allocations').select('invoice_id,amount_paise'),
-        supabase.from('payments').select('amount_paise'),
-        supabase.from('credit_entries').select('amount_paise'),
-      ]);
-      const paid = new Map();
-      for (const a of alloc.data ?? []) paid.set(a.invoice_id, (paid.get(a.invoice_id) ?? 0) + a.amount_paise);
-      const { invoiceState } = await import('../domain/status.js');
-      let out = 0;
-      for (const i of inv.data ?? []) {
-        const st = invoiceState({ statusOverride: i.status_override, totalPaise: i.total_paise, dueDate: i.due_date }, paid.get(i.id) ?? 0, todayIST());
-        out += st.outstanding;
-      }
-      const credits = (cred.data ?? []).reduce((s, c) => s + c.amount_paise, 0);
-      const onAcct = Math.max(0, (pay.data ?? []).reduce((s, p) => s + p.amount_paise, 0) - (alloc.data ?? []).reduce((s, a) => s + a.amount_paise, 0));
-      const total = out + credits - onAcct;
-      setCard({
-        type: 'answer', title: 'Poora baaki (sab customers)',
-        big: formatINR(total), words: amountInWords(total),
-        lines: [`Bills: ${formatINR(out)}`, `Khata: ${formatINR(credits)}`, onAcct > 0 ? `Advance: -${formatINR(onAcct)}` : null].filter(Boolean),
-      });
-      speak(`Kul milakar ${formatINR(total).replace('₹', '')} rupaye baaki hai`);
-    }
-  }, [speak, setCard]);
-
-  const confirmFor = useCallback((customer, parsed) => {
-    const paise = parsed.amountRupees != null ? toPaise(String(parsed.amountRupees)) : null;
-    if (parsed.intent === 'add_credit' && Array.isArray(parsed.items) && parsed.items.length) {
-      // itemized bill: the customer later verifies each line on the pay link
-      setCard({ type: 'confirm-bill', customer, parsed, items: parsed.items, paise, dateLabel: formatDateIN(todayIST()) });
-      const list = parsed.items.map((it) => `${it.label} ${Math.round(it.amountRupees)}`).join(', ');
-      speak(`${list}. Kul ${formatINR(paise)} ka bill banega. Bill khaate mein entry karun? Haan ya nahi?`, () => beginListen('confirm'));
-    } else if (parsed.intent === 'add_credit') {
-      setCard({ type: 'confirm-credit', customer, parsed, paise, dateLabel: formatDateIN(todayIST()) });
-      speak(`${customer.name} ke khaate mein ${formatINR(paise)} add karun? Haan ya nahi?`, () => beginListen('confirm'));
-    } else if (parsed.intent === 'record_payment') {
-      setCard({ type: 'confirm-payment', customer, parsed, paise, dateLabel: formatDateIN(todayIST()) });
-      speak(`${customer.name} ne ${formatINR(paise)} bheje. Jama karun? Haan ya nahi?`, () => beginListen('confirm'));
-    } else if (parsed.intent === 'reminder') {
-      const msg = `Namaste ${customer.name} ji, aapka payment (${formatINR(paise || 0)}) baaki hai. Kripya jaldi karein. — Sharma Packaging`;
-      window.open(`https://wa.me/91${(customer.phone || '').replace(/\D/g, '').replace(/^91/, '')}?text=${encodeURIComponent(msg)}`, '_blank');
-      logEvent({ kind: 'reminder_sent', customerId: customer.id, payload: { via: 'whatsapp', from: 'voice' } });
-      setCard({
-        type: 'answer', title: 'WhatsApp khul gaya', big: customer.name, words: null,
-        lines: ['Message bhar chuka hai — aapko bas Send dabana hai.', 'Reminder note ledger mein log ho gaya.'],
-      });
-      speak(`${customer.name} ka reminder WhatsApp par khul gaya, aap send dabaiye`);
-    }
-  }, [speak, beginListen, setCard]);
-
-  // Read the options SHORT: long reads invite the user to answer mid-question,
-  // before the mic is open — which was the "never listens" loop.
-  const speakOptions = useCallback((c, then) => {
-    const n = c.candidates.length;
-    const list = c.candidates.slice(0, 3).map((x, i) => `${i + 1}. ${x.label.replace(' · ', ', ')}`).join('. ');
-    const more = n > 3 ? ` Aur ${n - 3} aur hain.` : '';
-    const tail = n === 2 ? 'Boliye pehla ya doosra.'
-      : n === 3 ? 'Boliye pehla, doosra ya teesra.'
-      : 'Number boliye.';
-    speak(`Kaunse? ${list}.${more} ${tail}`, then);
-  }, [speak]);
-
-  // New-customer card, asked by voice: "X naam se koi khaata nahi. Naya banau?"
-  const openNewCustomerCard = useCallback((parsed, then) => {
-    const name = parsed?.customerNameRoman || parsed?.customerName || '';
-    setCard({ type: 'new-customer', parsed, name, phone: '', then: then ?? null });
-    if (name) speak(`${name} naam se koi khaata nahi mila. Naya khaata banau? Haan ya nahi?`, () => beginListen('confirm'));
-    // no name heard: stay manual (a spoken bare name isn't a yes/no answer)
-  }, [speak, beginListen, setCard]);
-
-  const resolveAndGo = useCallback((parsed) => {
-    const name = parsed.customerName || parsed.customerNameRoman || '';
-    if (parsed.intent === 'add_customer' || (!name && parsed.intent !== 'outstanding')) {
-      if (parsed.intent === 'add_customer') {
-        openNewCustomerCard(parsed, null);
-        return;
-      }
-      setCard({ type: 'error', message: 'Kis customer ke liye? Naam boliye — jaise "Gupta ji 400 ka samaan liya".' });
-      return;
-    }
-    if (!name && parsed.intent === 'outstanding') { answerOutstanding(null, parsed); return; }
-    const r = resolveCustomer(name, customers);
-    if (r.status === 'unique') {
-      if (parsed.intent === 'outstanding') answerOutstanding(r.candidates[0].customer, parsed);
-      else confirmFor(r.candidates[0].customer, parsed);
-    } else if (r.status === 'ambiguous' && r.candidates.length === 1) {
-      // fuzzy single hit: confirm the match instead of "pehla ya doosra"
-      const cust = r.candidates[0].customer;
-      setCard({
-        type: 'disambiguate', parsed, heardName: name, single: true,
-        candidates: describeCandidates([cust]),
-      });
-      speak(`Sirf ek naam mila: ${cust.name}${cust.area ? ', ' + cust.area : ''}. Yahi sahi hai? Haan ya nahi?`, () => beginListen('confirm'));
-    } else if (r.status === 'ambiguous') {
-      setCard({
-        type: 'disambiguate', parsed, heardName: name,
-        candidates: describeCandidates(r.candidates.map((x) => x.customer)),
-      });
-      const c = cardRef.current;
-      speakOptions(c, () => beginListen('choose'));
-    } else {
-      if (parsed.intent === 'outstanding') {
-        setCard({ type: 'error', message: `"${name}" naam se koi customer nahi mila. Spelling try karein ya naam pura boliye.` });
-      } else {
-        openNewCustomerCard(parsed, 'confirm');
-      }
-    }
-  }, [customers, answerOutstanding, confirmFor, speakOptions, beginListen, openNewCustomerCard, setCard]);
-
-  const handleParsed = useCallback((parsed) => {
-    setHeard(parsed?.heard || '');
-    if (!parsed || parsed.intent === 'unknown') {
-      setCard({ type: 'error', message: 'Samajh nahi aaya. Thoda saaf boliye — ya neeche type karein.' });
-      return;
-    }
-    if ((parsed.intent === 'add_credit' || parsed.intent === 'record_payment') && parsed.amountRupees == null) {
-      setCard({ type: 'error', message: 'Kitne ka? Amount boliye — jaise "chaar sau ka samaan".' });
-      return;
-    }
-    resolveAndGo(parsed);
-  }, [resolveAndGo, setCard]);
-
-  const sendTyped = useCallback(async (e) => {
-    e?.preventDefault();
-    const text = typed.trim();
-    if (!text) return;
-    // if a confirm/choose card is open, typed text answers IT ("haan", "doosra")
-    const openCard = cardRef.current;
-    const ctx = openCard && (openCard.type?.startsWith('confirm') || openCard.type === 'new-customer' || openCard.type === 'disambiguate' && openCard.single) ? 'confirm'
-      : openCard?.type === 'disambiguate' ? 'choose' : null;
-    cancelListen();
-    setTyped(''); setPhase('think'); setLastWrite(null);
-    try {
-      const res = await fetch('/api/voice', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(ctx ? { text, context: ctx } : { text }),
-      });
-      const j = await res.json();
-      if (!j.ok) throw new Error(j.error);
-      if (ctx) { setPhase('idle'); handleAnswer(j.parsed, openCard, ctx); return; }
-      handleParsed(j.parsed);
-    } catch {
-      setCard({ type: 'error', message: 'Request fail ho gayi. Dobara try karein.' });
-    } finally { setPhase('idle'); }
-  }, [typed, handleParsed, cancelListen, setCard]);
-
-  // ---------- confirm / write ----------
-  const afterWrite = useCallback((kind, row, label, spoken) => {
-    setCard(null);
-    setLastWrite({ kind, id: row.id, label, until: Date.now() + 10000 });
-    speak(spoken);
-    loadCustomers(); loadRecents();
-  }, [speak, loadCustomers, loadRecents, setCard]);
-
-  const submitCard = useCallback(async () => {
-    const card = cardRef.current;
-    if (!card || busy) return;
-    cancelListen();
-    setBusy(true);
-    try {
-      if (card.type === 'confirm-credit') {
-        const row = await insertCreditEntry({ customerId: card.customer.id, amountRupees: card.parsed.amountRupees, note: card.parsed.note });
-        afterWrite('credit', row, `${card.customer.name} · khaata ${formatINR(card.paise)}`,
-          `${card.customer.name} ke khaate mein ${formatINR(card.paise)} add ho gaya`);
-      } else if (card.type === 'confirm-bill') {
-        const row = await createVoiceBill({ customerId: card.customer.id, items: card.items });
-        afterWrite('invoice', row, `${card.customer.name} · bill ${row.number} · ${formatINR(card.paise)}`,
-          `${formatINR(card.paise)} ka bill ban gaya, ${card.customer.name} ke khaate mein`);
-      } else if (card.type === 'confirm-payment') {
-        const { payment, allocatedTo } = await recordPayment({ customerId: card.customer.id, amountRupees: card.parsed.amountRupees, method: card.parsed.paymentMethod });
-        const allocLine = allocatedTo.length ? `${allocatedTo.length} bill${allocatedTo.length > 1 ? 's' : ''} adjust hue` : 'on account jama hua';
-        afterWrite('payment', payment, `${card.customer.name} · payment ${formatINR(card.paise)} (${allocLine})`,
-          `${formatINR(card.paise)} jama ho gaya, ${allocLine}`);
-      } else if (card.type === 'new-customer') {
-        const row = await insertCustomer({ name: card.name, phone: card.phone, area: card.area, city: card.city });
-        await loadCustomers();
-        speak(`${card.name} ka naya khaata ban gaya`);
-        if (card.then === 'confirm' && card.parsed?.intent) {
-          confirmFor(mapCustomerRow(row), card.parsed);
-        } else {
-          afterWrite('none', row, `${card.name} · naya customer`, `${card.name} ka naya khaata ban gaya`);
-        }
-      }
-    } catch (e) {
-      setCard({ type: 'error', message: `Save nahi hua: ${e.message}` });
-    } finally { setBusy(false); }
-  }, [busy, afterWrite, loadCustomers, speak, confirmFor, cancelListen, setCard]);
-
-  // wire refs AFTER all definitions (async answer handlers reach through these)
+export default function Landing() {
   useEffect(() => {
-    handleParsedRef.current = handleParsed;
-    answerOutstandingRef.current = answerOutstanding;
-    confirmForRef.current = confirmFor;
-    submitCardRef.current = submitCard;
-    openNewCustomerCardRef.current = openNewCustomerCard;
-    handleAnswerRef.current = handleAnswer;
-  });
-
-  const doUndo = useCallback(async () => {
-    if (!lastWrite || lastWrite.kind === 'none') { setLastWrite(null); return; }
-    try { await undoWrite({ kind: lastWrite.kind, id: lastWrite.id }); } catch {}
-    setLastWrite(null);
-    loadRecents();
-    speak('Ho gaya, hata diya');
-  }, [lastWrite, loadRecents, speak]);
-
-  useEffect(() => {
-    if (!lastWrite) return;
-    const t = setTimeout(() => setLastWrite(null), 10000);
-    return () => clearTimeout(t);
-  }, [lastWrite]);
-
-  const pick = (c) => {
-    cancelListen();
-    const cust = customers.find((x) => x.id === c.id);
-    if (cardRef.current?.parsed?.intent === 'outstanding') answerOutstanding(cust, cardRef.current.parsed);
-    else confirmFor(cust, cardRef.current.parsed);
-  };
-
-  const closeCard = () => { cancelListen(); setCard(null); };
-
-  // ---------- render ----------
-  const listening = phase === 'listen';
-  const isChoose = cardRef.current?.type === 'disambiguate' && !cardRef.current.single;
-  const chooseHint = cardRef.current && isChoose
-    ? (cardRef.current.candidates.length === 2 ? '"pehla" ya "doosra"' : 'number boliye')
-    : '"haan" ya "nahi"';
-  const singleMatch = cardRef.current?.type === 'disambiguate' && cardRef.current.single;
-  const statusText = listening ? STATUS.listen(singleMatch ? '"haan" ya "nahi"' : chooseHint) : STATUS[phase];
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) { e.target.classList.add('revealed'); io.unobserve(e.target); }
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 pb-36 pt-5 md:max-w-2xl md:pb-12 md:pt-8">
-      {/* header */}
-      <header className="mb-4 flex items-center gap-3 md:hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-192.png" alt="BolHisab" width={46} height={46} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-xl font-extrabold tracking-tight">BolHisab</h1>
-            <span className="text-sm font-semibold text-[#6D3FD8]">हिसाब अब बोलकर</span>
+    <main className="min-h-screen bg-white text-[#1A181C]">
+      {/* nav */}
+      <header className="sticky top-0 z-40 border-b border-[#F0EEE8] bg-white/85 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-192.png" alt="BolHisab" width={36} height={36} />
+            <span className="text-lg font-extrabold tracking-tight">Bol<span className="text-[#D99C00]">Hisab</span></span>
           </div>
+          <nav className="hidden items-center gap-7 text-sm font-semibold text-[#6B6960] md:flex">
+            <a href="#features" className="transition hover:text-[#1A181C]">Features</a>
+            <a href="#how" className="transition hover:text-[#1A181C]">How it works</a>
+            <a href="#download" className="transition hover:text-[#1A181C]">Download</a>
+          </nav>
+          <Link href="/login" className="rounded-full bg-[#1A181C] px-5 py-2.5 text-xs font-extrabold text-white transition hover:bg-black active:scale-95">
+            Web Dashboard →
+          </Link>
         </div>
       </header>
 
-      {/* mic hero — purple voice card */}
-      <section className="voice-hero relative overflow-hidden rounded-[2rem] p-6 pb-8 text-center text-white md:p-9">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em]">
-          <Icon name="sparkle" className="h-3.5 w-3.5" /> AI Voice Entry
-        </span>
-        <h2 className="mt-2 text-xl font-extrabold tracking-tight md:text-2xl">Bas bolo, hisab ho jayega.</h2>
-        <p className="mx-auto mt-1 max-w-sm text-[13px] font-medium text-white/70">{statusText}</p>
+      {/* hero */}
+      <section className="relative overflow-hidden">
+        <div className="pointer-events-none absolute -left-32 -top-24 h-96 w-96 rounded-full bg-[#F5C818]/20 blur-3xl animate-blob" />
+        <div className="pointer-events-none absolute -right-24 top-40 h-80 w-80 rounded-full bg-[#8B5CF6]/15 blur-3xl animate-blob" style={{ animationDelay: '-7s' }} />
+        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-16 md:grid-cols-2 md:py-24">
+          <div>
+            <Reveal>
+              <span className="inline-flex items-center gap-2 rounded-full bg-[#F8F7F2] px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#6B6960] ring-1 ring-[#E5E3DC]">
+                🎙 Voice-first khata for Indian manufacturers
+              </span>
+            </Reveal>
+            <Reveal delay={80}>
+              <h1 className="mt-5 text-5xl font-extrabold leading-[1.05] tracking-tight md:text-6xl">
+                हिसाब अब <span className="relative inline-block">
+                  <span className="relative z-10">बोलकर</span>
+                  <span className="absolute inset-x-0 bottom-1 z-0 h-4 rounded-sm bg-[#F5C818] md:h-5" />
+                </span>।
+              </h1>
+            </Reveal>
+            <Reveal delay={160}>
+              <p className="mt-5 max-w-md text-lg leading-relaxed text-[#6B6960]">
+                No typing, no apps sikho. Bas bolo — BolHisab sunta hai, confirm karta hai,
+                GST bill banata hai aur payment khud yaad dilaata hai.
+              </p>
+            </Reveal>
+            <Reveal delay={240}>
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                <Link href="/login" className="rounded-full bg-[#F5C818] px-7 py-4 text-sm font-extrabold text-[#1A181C] shadow-[0_16px_36px_-14px_rgba(245,200,24,0.9)] transition hover:scale-[1.03] active:scale-95">
+                  Web Dashboard →
+                </Link>
+                <a href="/bolhisab.apk" className="flex items-center gap-2 rounded-full bg-[#1A181C] px-7 py-4 text-sm font-extrabold text-white transition hover:scale-[1.03] active:scale-95">
+                  <Icon name="download" className="h-4 w-4" /> Download APK
+                </a>
+              </div>
+            </Reveal>
+            <Reveal delay={320}>
+              <div className="mt-7 flex flex-wrap gap-2 text-[11px] font-bold text-[#9C9A92]">
+                {['Hinglish', 'हिंदी', 'English', 'GST-ready', 'UPI QR'].map((c) => (
+                  <span key={c} className="rounded-full bg-[#F8F7F2] px-3 py-1.5 ring-1 ring-[#E5E3DC]">{c}</span>
+                ))}
+              </div>
+            </Reveal>
+          </div>
 
-        <button
-          onClick={phase === 'rec' || listening ? stopRec : phase === 'idle' ? () => startRec('command') : undefined}
-          disabled={phase === 'think'}
-          className={`mx-auto mt-6 flex h-32 w-32 items-center justify-center rounded-full transition md:h-36 md:w-36
-            ${(phase === 'rec' || listening)
-              ? 'mic-recording bg-white text-[#1A181C] active:scale-95'
-              : 'bg-[#F5C818] text-[#1A181C] shadow-[0_20px_44px_-12px_rgba(0,0,0,0.5)] hover:scale-105 active:scale-95'}
-            ${phase === 'think' ? 'opacity-50' : ''}`}
-          aria-label={phase === 'rec' || listening ? 'Recording stop karein' : 'Bolna shuru karein'}
-        >
-          {phase === 'think' ? <span className="text-3xl">⋯</span>
-            : (phase === 'rec' || listening) ? <Icon name="mic" className="h-12 w-12" />
-            : <Icon name="mic" className="h-12 w-12" />}
-        </button>
-
-        {heard && <p className="mx-auto mt-4 inline-block rounded-full bg-white/12 px-4 py-1.5 text-sm italic text-white/85">“{heard}”</p>}
-
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {['Hinglish', 'हिंदी', 'English'].map((l) => (
-            <span key={l} className="rounded-full border border-white/25 px-3 py-1 text-[11px] font-semibold text-white/85">{l}</span>
-          ))}
+          {/* hero visual: mic + pulse rings + floating cards */}
+          <Reveal delay={200} className="relative mx-auto hidden h-[420px] w-full max-w-md md:block">
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="hero-ring absolute h-40 w-40 rounded-full bg-[#F5C818]/40" />
+              <div className="hero-ring absolute h-40 w-40 rounded-full bg-[#F5C818]/40" style={{ animationDelay: '1.2s' }} />
+              <div className="relative flex h-40 w-40 items-center justify-center rounded-full bg-[#F5C818] shadow-[0_30px_60px_-20px_rgba(245,200,24,0.8)]">
+                <Icon name="mic" className="h-16 w-16 text-[#1A181C]" />
+              </div>
+            </div>
+            {/* waveform */}
+            <div className="absolute bottom-2 left-1/2 flex h-10 -translate-x-1/2 items-center gap-1.5">
+              {[0.9, 0.4, 1.1, 0.7, 1.3, 0.5, 1, 0.8, 1.2, 0.6].map((d, i) => (
+                <span key={i} className="wave-bar h-8 w-1.5 rounded-full bg-[#8B5CF6]/70" style={{ animationDuration: `${d}s` }} />
+              ))}
+            </div>
+            {/* floating cards */}
+            <div className="animate-floaty absolute left-0 top-6 w-52 rounded-2xl bg-white p-3.5 shadow-[0_20px_44px_-20px_rgba(26,24,28,0.35)] ring-1 ring-[#E5E3DC]">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#9C9A92]">Sun raha hoon…</p>
+              <p className="mt-1 text-sm font-bold">“Sharma ji ne 110 ki sabji, 90 ka tel…”</p>
+              <p className="mt-1.5 flex items-center gap-1 text-[11px] font-extrabold text-[#1B7A3D]">✓ Bill ₹200 saved</p>
+            </div>
+            <div className="animate-floaty-slow absolute bottom-24 left-2 w-44 rounded-2xl bg-[#141216] p-3.5 text-white shadow-xl">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-white/50">Aapko milega</p>
+              <p className="text-xl font-extrabold text-[#FF9D93]">₹11,24,580</p>
+              <p className="text-[10px] text-white/40">Aaj ke follow-ups: 5</p>
+            </div>
+            <div className="animate-floaty absolute right-0 top-28 w-40 rounded-2xl bg-white p-3.5 shadow-[0_20px_44px_-20px_rgba(26,24,28,0.35)] ring-1 ring-[#E5E3DC]" style={{ animationDelay: '-2.5s' }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#9C9A92]">Payment aaya</p>
+              <p className="mt-0.5 text-lg font-extrabold text-[#1B7A3D]">+₹5,000</p>
+              <p className="text-[10px] text-[#9C9A92]">UPI · Patil ji</p>
+            </div>
+          </Reveal>
         </div>
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {['Gupta ji 400 ka samaan liya', 'Patil ne 5,000 bheje', 'kitna baaki hai Gupta ji ka'].map((s) => (
-            <button key={s} onClick={() => setTyped(s)}
-              className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-white/75 active:bg-white/20">{s}</button>
+      </section>
+
+      {/* stats strip */}
+      <section className="border-y border-[#F0EEE8] bg-[#FCFBF8]">
+        <div className="mx-auto grid max-w-6xl grid-cols-2 gap-6 px-5 py-8 text-center md:grid-cols-4">
+          {[['3 sec', 'mein entry'], ['6 cases', 'bank matching'], ['13 weeks', 'cash forecast'], ['70+', 'passing tests']].map(([a, b], i) => (
+            <Reveal key={a} delay={i * 70}>
+              <p className="text-2xl font-extrabold tracking-tight md:text-3xl">{a}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#9C9A92]">{b}</p>
+            </Reveal>
           ))}
         </div>
       </section>
 
-      {/* typed fallback */}
-      <form onSubmit={sendTyped} className="mt-3 flex gap-2">
-        <input
-          value={typed} onChange={(e) => setTyped(e.target.value)}
-          placeholder={cardRef.current && (cardRef.current.type?.startsWith('confirm') || cardRef.current.type === 'disambiguate' || cardRef.current.type === 'new-customer') ? 'Ya type karein: "haan" / "doosra"' : 'Type karein: "Mehta ji ka kitna baaki?"'}
-          className="flex-1 rounded-2xl bg-white px-4 py-3.5 text-sm shadow-[0_6px_20px_-12px_rgba(26,24,28,0.3)] ring-1 ring-[#E5E3DC] outline-none placeholder:text-[#B5B3AA] focus:ring-2 focus:ring-[#8B5CF6]"
-        />
-        <button type="submit" disabled={phase === 'think'}
-          className="rounded-2xl bg-[#1A181C] px-5 py-3.5 text-sm font-bold text-white ring-1 ring-[#1A181C] transition active:scale-95 disabled:opacity-50">
-          <Icon name="chevron" className="h-4 w-4" />
-        </button>
-      </form>
-
-      {/* recents */}
-      <section className="mt-5 rounded-[1.75rem] bg-white p-5 ring-1 ring-[#E5E3DC]">
-        <h2 className="mb-1 text-base font-extrabold tracking-tight">Aakhri entries</h2>
-        <ul>
-          {recents.map((r) => (
-            <li key={r.kind + r.id} className="flex items-center gap-3 border-b border-[#F2F0EA] py-3 last:border-0">
-              <Avatar name={r.name} className="h-10 w-10 text-xs" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-bold">{r.name}</span>
-                <span className="block text-[11px] text-[#9C9A92]">{r.kind === 'payment' ? `Payment aaya${r.mode ? ' · ' + r.mode : ''}` : 'Udhaar diya'}</span>
-              </span>
-              <span className={`shrink-0 text-sm font-extrabold ${r.kind === 'payment' ? 'text-[#1A181C]' : 'text-[#6D3FD8]'}`}>
-                {r.kind === 'payment' ? '+' : ''}{formatINR(r.paise)}
-              </span>
-            </li>
+      {/* features */}
+      <section id="features" className="mx-auto max-w-6xl px-5 py-16 md:py-24">
+        <Reveal>
+          <h2 className="text-center text-3xl font-extrabold tracking-tight md:text-4xl">Kaam jo BolHisab karta hai</h2>
+          <p className="mx-auto mt-3 max-w-lg text-center text-[#6B6960]">Copy-pen aur WhatsApp ke chakkar se azaadi — ek bolti hui khata, sab kuch diary se zyada smart.</p>
+        </Reveal>
+        <div className="mt-12 grid gap-5 md:grid-cols-2">
+          {FEATURES.map((f, i) => (
+            <Reveal key={f.title} delay={i * 90}>
+              <div className="group h-full rounded-[1.75rem] bg-white p-6 ring-1 ring-[#ECEAE2] transition hover:-translate-y-1 hover:shadow-[0_28px_60px_-30px_rgba(26,24,28,0.35)] hover:ring-[#F5C818]">
+                <span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${f.tint}`}>
+                  <Icon name={f.icon} className="h-5 w-5" />
+                </span>
+                <h3 className="mt-4 text-lg font-extrabold tracking-tight">{f.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-[#6B6960]">{f.body}</p>
+              </div>
+            </Reveal>
           ))}
-          {!recents.length && <li className="py-5 text-center text-sm text-[#9C9A92]">Abhi kuch nahi. Mic dabaiye.</li>}
-        </ul>
+        </div>
       </section>
 
-      {/* undo toast */}
-      {lastWrite && (
-        <div className="fixed inset-x-0 bottom-24 z-30 mx-auto flex max-w-md items-center justify-between gap-3 rounded-full bg-[#1A181C] py-2.5 pl-5 pr-2 text-sm text-white shadow-[0_18px_40px_-10px_rgba(26,24,28,0.6)] md:bottom-6">
-          <span className="min-w-0 flex-1 truncate">✔ {lastWrite.label}</span>
-          {lastWrite.kind !== 'none' && <button onClick={doUndo} className="rounded-full bg-[#F5C818] px-4 py-2 text-xs font-extrabold text-[#1A181C] active:scale-95">↩ Undo</button>}
-        </div>
-      )}
-
-      {/* card overlay */}
-      {card && (
-        <div className="fixed inset-0 z-40 flex items-end bg-[#1A181C]/55 p-4 backdrop-blur-[2px] md:items-center" onClick={card.type === 'answer' || card.type === 'error' ? closeCard : null}>
-          <div className="w-full rounded-[2rem] bg-white p-6 shadow-2xl md:mx-auto md:max-w-md" onClick={(e) => e.stopPropagation()}>
-
-            {/* inline typed-answer row (voice alternative inside the card) */}
-            {card.type !== 'answer' && card.type !== 'error' && (
-              <form onSubmit={sendTyped} className="mb-4 flex gap-2">
-                <input
-                  value={typed} onChange={(e) => setTyped(e.target.value)}
-                  placeholder={card.type === 'disambiguate' && !card.single ? 'Type karein: "pehla" / "doosra"' : 'Type karein: "haan" / "nahi"'}
-                  className="min-w-0 flex-1 rounded-full bg-[#F2F0EA] px-4 py-2.5 text-sm outline-none placeholder:text-[#B5B3AA] focus:ring-2 focus:ring-[#8B5CF6]"
-                />
-                <button type="submit" className="rounded-full bg-[#1A181C] px-4 py-2.5 text-xs font-bold text-white active:scale-95">Bhejo</button>
-              </form>
-            )}
-
-            {card.type === 'confirm-bill' && (
-              <>
-                <h3 className="flex items-center gap-2 text-base font-extrabold tracking-tight">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#DDD0FA] text-[#4A2FA6]">
-                    <Icon name="book" className="h-4 w-4" />
-                  </span>
-                  Bill banau — khaate mein?
-                </h3>
-                <p className="mt-2 flex items-center gap-2 text-sm text-[#9C9A92]">
-                  <Avatar name={card.customer.name} className="h-7 w-7 text-[10px]" />
-                  {card.customer.name}{card.customer.area ? ` · ${card.customer.area}` : ''} · {card.dateLabel}
-                </p>
-                <ul className="mt-3 rounded-2xl bg-[#F8F7F2] p-2 ring-1 ring-[#E5E3DC]">
-                  {card.items.map((it, i) => (
-                    <li key={i} className="flex items-center justify-between border-b border-[#ECEAE2] px-2.5 py-2 text-sm last:border-0">
-                      <span className="font-semibold">{it.label}</span>
-                      <span className="font-bold">{formatINR(toPaise(String(it.amountRupees)))}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="my-4 text-center text-5xl font-extrabold tracking-tight">{formatINR(card.paise)}</p>
-                <p className="text-center text-xs capitalize text-[#9C9A92]">{amountInWords(card.paise)} — kul</p>
-                <p className="mt-3 flex items-center justify-center gap-1.5 text-xs font-bold text-[#6D3FD8]">
-                  <Icon name="mic" className="h-3.5 w-3.5" />
-                  {listening ? 'Sun raha hoon… boliye “haan” ya “nahi”' : 'Ya boliye: “haan” / “nahi”'}
-                </p>
-                <div className="mt-4 flex gap-3">
-                  <button onClick={closeCard} className="flex-1 rounded-2xl bg-[#F2F0EA] py-3.5 text-sm font-bold text-[#6B6960] ring-1 ring-[#E5E3DC] active:scale-[0.98]">Nahi</button>
-                  <button onClick={submitCard} disabled={busy} className="flex-[2] rounded-2xl bg-[#1A181C] py-3.5 text-sm font-extrabold text-white active:scale-[0.98] disabled:opacity-50">
-                    {busy ? 'Ban raha…' : 'Haan, bill banao'}
-                  </button>
+      {/* how it works */}
+      <section id="how" className="border-y border-[#F0EEE8] bg-[#FCFBF8]">
+        <div className="mx-auto max-w-6xl px-5 py-16 md:py-20">
+          <Reveal><h2 className="text-center text-3xl font-extrabold tracking-tight md:text-4xl">Teen kadam. Bas.</h2></Reveal>
+          <div className="mt-12 grid gap-8 md:grid-cols-3">
+            {[
+              ['1', 'Bolo', 'Mic dabaiye aur apni bhasha mein boliye — Hinglish, हिंदी या English.'],
+              ['2', 'Confirm', 'BolHisab bol kar sunata hai, aap “haan” bolein — ya screen par tap karein.'],
+              ['3', 'Ho gaya', 'Bill, khata, reminder, forecast — sab khud update, 10-second undo ke saath.'],
+            ].map(([n, t, b], i) => (
+              <Reveal key={n} delay={i * 100}>
+                <div className="text-center">
+                  <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#F5C818] text-lg font-extrabold text-[#1A181C]">{n}</span>
+                  <h3 className="mt-4 text-lg font-extrabold">{t}</h3>
+                  <p className="mx-auto mt-1.5 max-w-xs text-sm text-[#6B6960]">{b}</p>
                 </div>
-              </>
-            )}
-
-            {(card.type === 'confirm-credit' || card.type === 'confirm-payment') && (
-              <>
-                <h3 className="flex items-center gap-2 text-base font-extrabold tracking-tight">
-                  <span className={`flex h-9 w-9 items-center justify-center rounded-2xl ${card.type === 'confirm-payment' ? 'bg-[#F5C818]/25 text-[#8A6D00]' : 'bg-[#DDD0FA] text-[#4A2FA6]'}`}>
-                    <Icon name={card.type === 'confirm-payment' ? 'downLeft' : 'upRight'} className="h-4 w-4" />
-                  </span>
-                  {card.type === 'confirm-payment' ? 'Payment aaya — jama karun?' : 'Khaate mein add karun?'}
-                </h3>
-                <p className="mt-2 flex items-center gap-2 text-sm text-[#9C9A92]">
-                  <Avatar name={card.customer.name} className="h-7 w-7 text-[10px]" />
-                  {card.customer.name}{card.customer.area ? ` · ${card.customer.area}` : ''} · {card.dateLabel}
-                  {card.parsed.paymentMethod ? ` · ${card.parsed.paymentMethod.toUpperCase()}` : ''}
-                </p>
-                <p className="my-5 text-center text-5xl font-extrabold tracking-tight">{formatINR(card.paise)}</p>
-                <p className="text-center text-xs capitalize text-[#9C9A92]">{amountInWords(card.paise)}</p>
-                {card.parsed.note && <p className="mt-2 text-center text-xs text-[#9C9A92]">Note: {card.parsed.note}</p>}
-                <p className="mt-3 flex items-center justify-center gap-1.5 text-xs font-bold text-[#6D3FD8]">
-                  <Icon name="mic" className="h-3.5 w-3.5" />
-                  {listening ? 'Sun raha hoon… boliye “haan” ya “nahi”' : 'Ya boliye: “haan” / “nahi”'}
-                </p>
-                <div className="mt-4 flex gap-3">
-                  <button onClick={closeCard} className="flex-1 rounded-2xl bg-[#F2F0EA] py-3.5 text-sm font-bold text-[#6B6960] ring-1 ring-[#E5E3DC] active:scale-[0.98]">Nahi</button>
-                  <button onClick={submitCard} disabled={busy} className="flex-[2] rounded-2xl bg-[#1A181C] py-3.5 text-sm font-extrabold text-white active:scale-[0.98] disabled:opacity-50">
-                    {busy ? 'Save ho raha…' : 'Haan, save karo'}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {card.type === 'disambiguate' && (
-              <>
-                <h3 className="text-base font-extrabold tracking-tight">
-                  {card.single
-                    ? <>Yahi sahi hai? <span className="font-semibold text-[#9C9A92]">(ek hi naam mila)</span></>
-                    : <>Kaunse {card.heardName}? <span className="font-semibold text-[#9C9A92]">({card.candidates.length})</span></>}
-                </h3>
-                <div className="mt-4 space-y-2">
-                  {card.candidates.map((c, i) => (
-                    <button key={c.id} onClick={() => pick(c)} className="flex w-full items-center gap-3 rounded-2xl bg-[#F8F7F2] px-4 py-3 text-left text-sm font-bold ring-1 ring-[#E5E3DC] transition active:scale-[0.99] active:ring-[#8B5CF6]">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F5C818] text-xs font-extrabold text-[#1A181C]">{i + 1}</span>
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-xs font-bold text-[#6D3FD8]">
-                  <Icon name="mic" className="h-3.5 w-3.5" />
-                  {card.single
-                    ? (listening ? 'Sun raha hoon… “haan” ya “nahi”' : 'Ya boliye: “haan” / “nahi”')
-                    : card.candidates.length === 2
-                      ? (listening ? 'Sun raha hoon… “pehla” ya “doosra”' : 'Ya boliye: “pehla” / “doosra”')
-                      : (listening ? `Sun raha hoon… number boliye (1–${card.candidates.length})` : `Ya number boliye — 1 se ${card.candidates.length}`)}
-                </p>
-                {!card.single && (
-                  <button onClick={() => { cancelListen(); openNewCustomerCard(card.parsed, 'confirm'); }}
-                    className="mt-2 w-full rounded-2xl py-2 text-xs font-bold text-[#9C9A92] active:underline">Ye naya naam hai — naya khaata banao</button>
-                )}
-              </>
-            )}
-
-            {card.type === 'new-customer' && (
-              <>
-                <h3 className="text-base font-extrabold tracking-tight">Naya customer banau?</h3>
-                <div className="mt-4 space-y-2">
-                  <input value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value })} placeholder="Naam"
-                    className="w-full rounded-2xl bg-[#F8F7F2] px-4 py-3 text-sm font-semibold ring-1 ring-[#E5E3DC] outline-none placeholder:font-normal placeholder:text-[#B5B3AA] focus:ring-2 focus:ring-[#8B5CF6]" />
-                  <input value={card.phone || ''} onChange={(e) => setCard({ ...card, phone: e.target.value })} placeholder="Phone (optional)"
-                    inputMode="tel" className="w-full rounded-2xl bg-[#F8F7F2] px-4 py-3 text-sm ring-1 ring-[#E5E3DC] outline-none placeholder:text-[#B5B3AA] focus:ring-2 focus:ring-[#8B5CF6]" />
-                  <input value={card.area || ''} onChange={(e) => setCard({ ...card, area: e.target.value })} placeholder="Area / sheher (optional)"
-                    className="w-full rounded-2xl bg-[#F8F7F2] px-4 py-3 text-sm ring-1 ring-[#E5E3DC] outline-none placeholder:text-[#B5B3AA] focus:ring-2 focus:ring-[#8B5CF6]" />
-                </div>
-                <p className="mt-3 flex items-center justify-center gap-1.5 text-xs font-bold text-[#6D3FD8]">
-                  <Icon name="mic" className="h-3.5 w-3.5" />
-                  {listening ? 'Sun raha hoon… boliye “haan” ya “nahi”' : 'Ya boliye: “haan” / “nahi”'}
-                </p>
-                <div className="mt-4 flex gap-3">
-                  <button onClick={closeCard} className="flex-1 rounded-2xl bg-[#F2F0EA] py-3.5 text-sm font-bold text-[#6B6960] ring-1 ring-[#E5E3DC] active:scale-[0.98]">Nahi</button>
-                  <button onClick={submitCard} disabled={busy || !card.name?.trim()} className="flex-[2] rounded-2xl bg-[#1A181C] py-3.5 text-sm font-extrabold text-white active:scale-[0.98] disabled:opacity-50">
-                    {busy ? 'Bana raha hoon…' : 'Khaata banao'}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {card.type === 'answer' && (
-              <>
-                <h3 className="text-base font-extrabold tracking-tight">{card.title}</h3>
-                <p className="my-5 text-center text-4xl font-extrabold tracking-tight">{card.big}</p>
-                {card.words && <p className="text-center text-xs capitalize text-[#9C9A92]">{card.words}</p>}
-                <ul className="mt-4 space-y-1.5 text-sm text-[#6B6960]">
-                  {card.lines.map((l, i) => <li key={i} className="rounded-xl bg-[#F8F7F2] px-3 py-2">{l}</li>)}
-                </ul>
-                <button onClick={closeCard} className="mt-5 w-full rounded-2xl bg-[#1A181C] py-3.5 text-sm font-bold text-white active:scale-[0.98]">Theek hai</button>
-              </>
-            )}
-
-            {card.type === 'error' && (
-              <>
-                <h3 className="text-base font-extrabold tracking-tight text-[#F05A4F]">😕 {card.message}</h3>
-                <button onClick={closeCard} className="mt-5 w-full rounded-2xl bg-[#1A181C] py-3.5 text-sm font-bold text-white active:scale-[0.98]">Theek hai</button>
-              </>
-            )}
-
+              </Reveal>
+            ))}
           </div>
         </div>
-      )}
+      </section>
+
+      {/* download CTA */}
+      <section id="download" className="mx-auto max-w-6xl px-5 py-16 md:py-24">
+        <Reveal>
+          <div className="relative overflow-hidden rounded-[2.5rem] bg-[#141216] px-6 py-14 text-center text-white md:py-20">
+            <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full bg-[#F5C818]/25 blur-3xl animate-blob" />
+            <div className="pointer-events-none absolute -bottom-20 -right-10 h-64 w-64 rounded-full bg-[#8B5CF6]/25 blur-3xl animate-blob" style={{ animationDelay: '-6s' }} />
+            <h2 className="relative text-3xl font-extrabold tracking-tight md:text-5xl">Hisab ab bolkar.</h2>
+            <p className="relative mx-auto mt-3 max-w-md text-white/60">Web par turant, ya Android app par — dono ek hi hisaab chalate hain.</p>
+            <div className="relative mt-8 flex flex-wrap justify-center gap-3">
+              <Link href="/login" className="rounded-full bg-[#F5C818] px-7 py-4 text-sm font-extrabold text-[#1A181C] transition hover:scale-[1.03] active:scale-95">
+                Web Dashboard →
+              </Link>
+              <a href="/bolhisab.apk" className="flex items-center gap-2 rounded-full bg-white/10 px-7 py-4 text-sm font-extrabold text-white ring-1 ring-white/25 transition hover:bg-white/20 active:scale-95">
+                <Icon name="download" className="h-4 w-4" /> Download APK
+              </a>
+            </div>
+          </div>
+        </Reveal>
+      </section>
+
+      <footer className="border-t border-[#F0EEE8]">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-8 text-xs text-[#9C9A92] md:flex-row">
+          <span className="flex items-center gap-2 font-extrabold text-[#1A181C]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-192.png" alt="" width={24} height={24} className="rounded-lg" />
+            BolHisab · हिसाब अब बोलकर
+          </span>
+          <span>Made for India's small manufacturers · Smart India Hackathon 2026</span>
+        </div>
+      </footer>
     </main>
   );
 }

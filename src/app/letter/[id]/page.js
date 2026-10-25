@@ -7,6 +7,7 @@ import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { supabase } from '../../../lib/supabase.js';
 import { formatINR, formatDateIN, amountInWords } from '../../../engine/index.js';
+import { BackLink } from '../../../components/ui.js';
 import { mapInvoiceRow, mapCustomerRow } from '../../../lib/ledger.js';
 import { todayIST, formatDateIN as fmt } from '../../../engine/dates.js';
 
@@ -37,7 +38,7 @@ export default function DemandLetter({ params }) {
   return (
     <main className="mx-auto max-w-md px-4 pb-24 pt-5">
       <div className="no-print mb-3 flex items-center justify-between">
-        <Link href={`/invoices/${id}`} className="text-xs font-bold text-[#9C9A92]">← Bill</Link>
+        <BackLink href={`/invoices/${id}`} label="Bill" />
         <button onClick={() => window.print()} className="rounded-full bg-[#1A181C] px-4 py-2 text-xs font-bold text-white transition active:scale-95">🖨 Print / PDF</button>
       </div>
 

@@ -6,8 +6,11 @@ import { useSearchParams } from 'next/navigation';
 import { loadBook, statusColor, statusLabel } from '../../lib/data.js';
 import { formatINR, formatDateIN } from '../../engine/index.js';
 import { Avatar, Icon } from '../../components/ui.js';
+import { useLang } from '../../lib/lang.js';
+import AuthGate from '../../components/AuthGate.js';
 
 function InvoiceList() {
+  const { t } = useLang();
   const sp = useSearchParams();
   const filter = sp.get('status');
   const [book, setBook] = useState(null);
@@ -28,18 +31,18 @@ function InvoiceList() {
     <main className="mx-auto max-w-3xl px-4 pb-28 pt-5 md:px-8 md:pb-10 md:pt-8">
       <header className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#9C9A92]">Khata</p>
-          <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">Bills & Invoices</h1>
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#9C9A92]">{t('navKhata')}</p>
+          <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">{t('invTitle')}</h1>
           <p className="mt-0.5 text-xs font-semibold text-[#9C9A92]">{rows.length} bills · baaki {formatINR(openDue)}</p>
         </div>
-        <Link href="/invoices/new" className="flex items-center gap-1.5 rounded-full bg-[#1A181C] px-4 py-3 text-xs font-extrabold text-white ring-1 ring-[#1A181C] transition active:scale-95">
-          <Icon name="plus" className="h-4 w-4" /> Nayi bill
+        <Link href="/invoices/new" className="flex items-center gap-1.5 rounded-full bg-[#F5C818] px-4 py-3 text-xs font-extrabold text-[#1A181C] shadow-[0_12px_28px_-14px_rgba(245,200,24,0.9)] transition active:scale-95">
+          <Icon name="plus" className="h-4 w-4" /> {t('newBill')}
         </Link>
       </header>
 
       <div className="flex items-center gap-2 rounded-full bg-white px-4 py-3 ring-1 ring-[#E5E3DC]">
         <Icon name="search" className="h-4 w-4 text-[#B5B3AA]" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Number ya customer khojein…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Number ya customer search…"
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[#B5B3AA]" />
       </div>
 
@@ -83,5 +86,5 @@ function InvoiceList() {
 }
 
 export default function InvoicesPage() {
-  return <Suspense><InvoiceList /></Suspense>;
+  return <Suspense><AuthGate><InvoiceList /></AuthGate></Suspense>;
 }

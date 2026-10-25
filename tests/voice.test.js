@@ -143,3 +143,13 @@ test('short answers: choice ordinals', () => {
   assert.deepEqual(parseChoiceAnswer('naya hai'), { index: null, wantsNew: true });
   assert.deepEqual(parseChoiceAnswer('ramesh wala'), { index: null, wantsNew: false });
 });
+
+test('rules: delete customer intent', () => {
+  const r = parseCommand('gupta ji ka khaata hatao');
+  assert.equal(r.intent, 'delete_customer');
+  assert.equal(r.customerName, 'gupta');
+  const r2 = parseCommand('sharma ji ka khaata delete karo');
+  assert.equal(r2.intent, 'delete_customer');
+  assert.equal(r2.customerName, 'sharma');
+  assert.equal(parseCommand('gupta ji 400 ka samaan liya').intent, 'add_credit');
+});
