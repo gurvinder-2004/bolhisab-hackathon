@@ -4,7 +4,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { Icon, LangSwitch } from '../components/ui.js';
+import { Icon, LangMenu, LangSwitch } from '../components/ui.js';
 import { useLang } from '../lib/lang.js';
 
 // feature copy comes from the language dictionary (f1t/f1b … f4t/f4b)
@@ -46,6 +46,7 @@ export default function Landing() {
             <a href="#how" className="transition hover:text-[#1A181C]">How it works</a>
             <a href="#download" className="transition hover:text-[#1A181C]">Download</a>
           </nav>
+          <span className="sm:hidden"><LangMenu /></span>
           <span className="hidden sm:inline-flex"><LangSwitch /></span>
           <Link href="/login" className="rounded-full bg-[#1A181C] px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-black active:scale-95 sm:px-5">
             {t('ctaWeb')}
@@ -67,10 +68,7 @@ export default function Landing() {
             <Reveal delay={80}>
               <h1 className="mt-5 text-5xl font-extrabold leading-[1.05] tracking-tight md:text-6xl">
                 {t('heroH1a')}{' '}
-                <span className="relative inline-block">
-                  <span className="relative z-10">{t('heroH1b')}</span>
-                  <span className="absolute inset-x-0 bottom-1 z-0 h-4 rounded-sm bg-[#F5C818] md:h-5" />
-                </span>
+                <span className="text-[#D99C00]">{t('heroH1b')}</span>
               </h1>
             </Reveal>
             <Reveal delay={160}>
